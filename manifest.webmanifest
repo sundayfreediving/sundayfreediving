@@ -1,0 +1,26 @@
+{
+  "name": "선데이프리다이빙",
+  "short_name": "선데이",
+  "description": "숨참기 훈련, 수업일정, 버디 찾기 — 선데이프리다이빙 공식 앱",
+  "lang": "ko",
+  "dir": "ltr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "portrait",
+  "theme_color": "#052a3f",
+  "background_color": "#eef3f6",
+  "categories": ["sports", "fitness", "education"],
+  "icons": [
+    { "src": "./icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "./icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "./icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "./icons/apple-touch-icon.png", "sizes": "180x180", "type": "image/png", "purpose": "any" }
+  ],
+  "shortcuts": [
+    { "name": "숨참기 훈련", "url": "./?tab=breath", "icons": [{ "src": "./icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "수업일정", "url": "./?tab=schedule", "icons": [{ "src": "./icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "버디 찾기", "url": "./?tab=buddy", "icons": [{ "src": "./icons/icon-192.png", "sizes": "192x192" }] }
+  ]
+}
