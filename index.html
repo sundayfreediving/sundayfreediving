@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>선데이프리다이빙</title>
-<meta name="description" content="선데이프리다이빙 공식 앱 — 숨참기 훈련, 수업일정, 버디 찾기">
+<meta name="description" content="선데이프리다이빙 공식 앱 — Apnea Training, 수업일정, 버디 찾기">
 <meta name="theme-color" content="#14171d">
 <meta name="color-scheme" content="light dark">
 <meta name="format-detection" content="telephone=no">
@@ -21,7 +21,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="선데이">
-<link rel="stylesheet" href="./styles.css?v=1.2.5">
+<link rel="stylesheet" href="./styles.css?v=1.2.6">
 </head>
 <body>
 
@@ -126,7 +126,7 @@
 <div class="app" id="app">
   <header class="topbar">
     <div class="brand">
-      <span class="brand-mark" aria-hidden="true"><img src="./icons/brand-logo.png?v=1.2.5" alt=""></span>
+      <span class="brand-mark" aria-hidden="true"><img src="./icons/brand-logo.png?v=1.2.6" alt=""></span>
       <span class="brand-text">
         <strong>선데이프리다이빙</strong>
         <span class="brand-sub">
@@ -142,11 +142,11 @@
 
   <main class="views" id="views">
 
-    <!-- ================= 숨참기 ================= -->
-    <section class="view is-active" id="view-breath" data-view="breath" aria-label="숨참기 훈련">
+    <!-- ================= Apnea Training ================= -->
+    <section class="view is-active" id="view-breath" data-view="breath" aria-label="Apnea Training">
       <div class="view-head">
         <p class="eyebrow">BREATH TRAINING</p>
-        <h1 class="view-title">숨참기</h1>
+        <h1 class="view-title">Apnea Training</h1>
         <p class="view-desc">내 마음대로 테이블을 맞추고, 숫자를 눌러 라운드별로 바로 바꿀 수 있어요.</p>
       </div>
 
@@ -181,7 +181,7 @@
         <div class="table-meta">
           <div>
             <p class="card-label" id="tableTitle">CO2 · 8 라운드</p>
-            <p class="table-sub" id="tableSub">숨참기 1:15 고정 · 휴식 2:00 → 0:15</p>
+            <p class="table-sub" id="tableSub">Apnea Training 1:15 고정 · 휴식 2:00 → 0:15</p>
           </div>
           <span class="tag" id="tableTotal">총 20분</span>
         </div>
@@ -196,11 +196,11 @@
             </div>
           </div>
           <div class="setting-row">
-            <span class="setting-name">숨참기 <em>PB 대비</em></span>
+            <span class="setting-name">Apnea Training <em>PB 대비</em></span>
             <div class="stepper" data-stepper="holdPct">
-              <button type="button" class="step-btn" data-step="-5" aria-label="숨참기 비율 줄이기">−</button>
+              <button type="button" class="step-btn" data-step="-5" aria-label="Apnea Training 비율 줄이기">−</button>
               <output id="holdPctOut">50%</output>
-              <button type="button" class="step-btn" data-step="5" aria-label="숨참기 비율 늘리기">+</button>
+              <button type="button" class="step-btn" data-step="5" aria-label="Apnea Training 비율 늘리기">+</button>
             </div>
           </div>
           <div class="setting-row">
@@ -345,7 +345,7 @@
 
   <nav class="tabbar" aria-label="주요 메뉴">
     <button class="tab is-active" data-tab="breath" type="button" aria-current="page">
-      <svg><use href="#i-timer"/></svg><span>숨참기</span>
+      <svg><use href="#i-timer"/></svg><span>Apnea Training</span>
     </button>
     <button class="tab" data-tab="schedule" type="button">
       <svg><use href="#i-calendar"/></svg><span>수업일정</span>
@@ -418,7 +418,7 @@
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-<script src="./config.js?v=1.2.5"></script>
-<script src="./app.js?v=1.2.5"></script>
+<script src="./config.js?v=1.2.6"></script>
+<script src="./app.js?v=1.2.6"></script>
 </body>
 </html>

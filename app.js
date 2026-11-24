@@ -657,7 +657,7 @@
     stepOutEl.textContent = s.stepSec + "초";
     stepLabelEl.innerHTML = state.tableType === "co2"
       ? '라운드마다 휴식 <em>감소</em>'
-      : '라운드마다 숨참기 <em>증가</em>';
+      : '라운드마다 Apnea Training <em>증가</em>';
 
     var resetCustomBtn = $("#resetCustomTableBtn");
     if (resetCustomBtn) resetCustomBtn.hidden = !isCustom;
@@ -672,16 +672,16 @@
     tableSubEl.textContent = isCustom
       ? "라운드별 시간 직접 설정됨 · 누르면 언제든 수정"
       : (state.tableType === "co2"
-        ? "숨참기 " + fmt(hold0) + " 고정 · 휴식 " + fmt(rest0) + " → " + fmt(restLast)
-        : "휴식 " + fmt(rest0) + " 고정 · 숨참기 " + fmt(hold0) + " → " + fmt(holdLast));
+        ? "Apnea Training " + fmt(hold0) + " 고정 · 휴식 " + fmt(rest0) + " → " + fmt(restLast)
+        : "휴식 " + fmt(rest0) + " 고정 · Apnea Training " + fmt(hold0) + " → " + fmt(holdLast));
 
     var total = 0;
-    var rowsHtml = '<div class="table-row head"><span>#</span><span>숨참기</span><span>휴식</span></div>';
+    var rowsHtml = '<div class="table-row head"><span>#</span><span>Apnea Training</span><span>휴식</span></div>';
     table.forEach(function (r, i) {
       total += r.hold + r.rest;
       rowsHtml += '<div class="table-row' + (i % 2 ? " alt" : "") + (i === table.length - 1 ? " final" : "") + '">'
         + '<span class="rnd">' + r.round + '</span>'
-        + '<button type="button" class="cell-btn hold" data-idx="' + i + '" data-field="hold" aria-label="' + r.round + '라운드 숨참기 시간 수정">' + fmt(r.hold) + '</button>'
+        + '<button type="button" class="cell-btn hold" data-idx="' + i + '" data-field="hold" aria-label="' + r.round + '라운드 Apnea Training 시간 수정">' + fmt(r.hold) + '</button>'
         + '<button type="button" class="cell-btn rest" data-idx="' + i + '" data-field="rest" aria-label="' + r.round + '라운드 휴식 시간 수정">' + fmt(r.rest) + '</button>'
         + '</div>';
     });
@@ -716,7 +716,7 @@
         + '<span class="history-badge ' + (h.type === "o2" ? "o2" : "") + '">' + (h.type === "o2" ? "O2" : "CO2") + '</span>'
         + '<div class="history-main">'
         + '<p class="history-title">' + (done ? h.rounds + "라운드 완주" : h.rounds + " / " + h.totalRounds + " 라운드") + '</p>'
-        + '<p class="history-sub">' + when + ' · PB ' + fmt(h.pb || 0) + ' · 총 숨참기 ' + fmt(h.holds || 0) + '</p>'
+        + '<p class="history-sub">' + when + ' · PB ' + fmt(h.pb || 0) + ' · 총 Apnea Training ' + fmt(h.holds || 0) + '</p>'
         + '</div>'
         + '<button class="history-del" type="button" data-hid="' + esc(h.id) + '" aria-label="기록 삭제"><svg><use href="#i-trash"/></svg></button>'
         + '</div>';
@@ -1567,8 +1567,7 @@
 
     return '<p class="sheet-text">' + modeNotice + '</p>'
       + '<input class="pin-input" id="adminPin" type="password" inputmode="numeric" maxlength="8" placeholder="••••" aria-label="관리자 번호">'
-      + '<div class="form-actions"><button type="button" class="btn-primary" id="adminPinBtn" style="flex:1">관리자 모드 켜기</button></div>'
-      + '<p class="sheet-note">기본 관리자 번호는 <strong>' + esc(LOCAL_PIN) + '</strong>입니다.</p>';
+      + '<div class="form-actions"><button type="button" class="btn-primary" id="adminPinBtn" style="flex:1">관리자 모드 켜기</button></div>';
   }
 
   function openAdminSheet() {
@@ -1749,7 +1748,7 @@
       input.inputMode = "numeric";
       input.className = "cell-input";
       input.value = fmt(curSec);
-      input.setAttribute("aria-label", (idx + 1) + "라운드 " + (field === "hold" ? "숨참기" : "휴식") + " 시간");
+      input.setAttribute("aria-label", (idx + 1) + "라운드 " + (field === "hold" ? "Apnea Training" : "휴식") + " 시간");
       btn.replaceWith(input);
       input.focus();
       input.select();

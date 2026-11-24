@@ -17,5 +17,5 @@ window.SFD_CONFIG = {
   // 로컬 체험 모드에서만 쓰이는 관리자 PIN (클라우드 모드에서는 사용 안 함)
   LOCAL_ADMIN_PIN: "0619",
 
-  APP_VERSION: "1.2.5"
+  APP_VERSION: "1.2.6"
 };
