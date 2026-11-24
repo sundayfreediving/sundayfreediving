@@ -841,8 +841,8 @@
       window.speechSynthesis.cancel();
       var u = new SpeechSynthesisUtterance(text);
       u.lang = "en-US";
-      u.rate = rate || 0.96;
-      u.pitch = 1.0;
+      u.rate = rate || 0.88;
+      u.pitch = 0.96;
       u.volume = 1.0;
       window.speechSynthesis.speak(u);
     } catch (e) { /* ignore */ }
@@ -852,15 +852,15 @@
 
   function requestWake() {
     if (!navigator.wakeLock || !navigator.wakeLock.request) {
-      timerNoteEl.textContent = "이 브라우저는 화면 켜짐 유지를 지원하지 않아요";
+      timerNoteEl.textContent = "Wake lock not supported";
       return;
     }
     navigator.wakeLock.request("screen").then(function (lock) {
       wakeLock = lock;
-      timerNoteEl.textContent = "화면이 켜진 상태로 유지됩니다";
+      timerNoteEl.textContent = "Screen stays awake";
       lock.addEventListener("release", function () { wakeLock = null; });
     }).catch(function () {
-      timerNoteEl.textContent = "화면 자동 잠금을 막지 못했어요";
+      timerNoteEl.textContent = "Wake lock unavailable";
     });
   }
 
@@ -911,7 +911,8 @@
     timerScreen.hidden = false;
     document.body.classList.add("is-locked");
     timerScreen.classList.remove("is-hold", "is-paused");
-    phaseBadgeEl.textContent = timer.phases[0].kind === "hold" ? "숨참기" : "휴식";
+    phaseBadgeEl.textContent = timer.phases[0].kind === "hold" ? "HOLD" : "PREPARATION";
+    timerHintEl.textContent = timer.phases[0].kind === "hold" ? "Relax · Stay calm" : "Breathe slowly · Official Top";
     updateTimerUI(true);
     cue(timer.phases[0].kind === "hold" ? "hold" : "rest");
     setToggleIcon(true);
@@ -929,7 +930,7 @@
     if (timer.lastTick && now - timer.lastTick > 4000) {
       timer.remaining = Math.max(0, (timer.phaseEnd - now) / 1000);
       pauseTimer();
-      timerHintEl.textContent = "화면이 꺼져 잠시 멈췄어요. 재생을 누르면 이어서 진행합니다.";
+      timerHintEl.textContent = "Paused in background. Press play to resume.";
       return;
     }
     timer.lastTick = now;
@@ -974,12 +975,12 @@
     cancelAnimationFrame(timer.raf);
 
     timerScreen.classList.toggle("is-hold", next.kind === "hold");
-    phaseBadgeEl.textContent = next.kind === "hold" ? "숨참기" : "휴식";
-    timerHintEl.textContent = next.kind === "hold" ? "편하게, 힘 빼고 버티세요" : "천천히 숨을 고르세요";
+    phaseBadgeEl.textContent = next.kind === "hold" ? "HOLD" : "PREPARATION";
+    timerHintEl.textContent = next.kind === "hold" ? "Relax · Stay calm" : "Breathe slowly · Official Top";
     cue(next.kind === "hold" ? "hold" : "rest");
     if (!skipped) {
-      if (next.kind === "hold") speak("Official top", 0.96);
-      else if (ph && ph.kind === "hold") speak("Breath", 0.96);
+      if (next.kind === "hold") speak("Official top", 0.88);
+      else if (ph && ph.kind === "hold") speak("Breath", 0.88);
     }
     updateTimerUI(true);
 
@@ -1008,7 +1009,7 @@
     }
     if (line) {
       timer.lastSpoken = sec;
-      speak(line, sec <= 5 ? 1.0 : 0.96);
+      speak(line, sec <= 5 ? 0.85 : 0.88);
     }
   }
 
@@ -1040,14 +1041,14 @@
     timerRoundEl.textContent = ph.round + " / " + timer.totalRounds;
     timerScreen.classList.toggle("is-hold", ph.kind === "hold");
     timerNextEl.textContent = next
-      ? "다음 · " + (next.kind === "hold" ? "숨참기 " : "휴식 ") + fmt(next.sec)
-      : "마지막 라운드";
+      ? "Next · " + (next.kind === "hold" ? "Hold " : "Preparation ") + fmt(next.sec)
+      : "Final Round";
     updateTimerProgress(timer.remaining);
   }
 
   function setToggleIcon(running) {
     setUse(timerToggleEl, running ? "i-pause" : "i-play");
-    timerToggleEl.setAttribute("aria-label", running ? "일시정지" : "재생");
+    timerToggleEl.setAttribute("aria-label", running ? "Pause" : "Play");
   }
 
   function pauseTimer() {
@@ -1070,7 +1071,7 @@
     timer.phaseEnd = Date.now() + timer.remaining * 1000;
     timerScreen.classList.remove("is-paused");
     var ph = timer.phases[timer.idx];
-    if (ph) timerHintEl.textContent = ph.kind === "hold" ? "편하게, 힘 빼고 버티세요" : "천천히 숨을 고르세요";
+    if (ph) timerHintEl.textContent = ph.kind === "hold" ? "Relax · Stay calm" : "Breathe slowly · Official Top";
     setToggleIcon(true);
     requestWake();
     cancelAnimationFrame(timer.raf);
@@ -1084,14 +1085,14 @@
     releaseWake();
     timer.remaining = 0;
     timerScreen.classList.remove("is-hold", "is-paused");
-    phaseBadgeEl.textContent = "완료";
+    phaseBadgeEl.textContent = "COMPLETE";
     timerTimeEl.textContent = "0:00";
-    timerHintEl.textContent = "수고했어요. 기록에 저장했어요.";
+    timerHintEl.textContent = "Session complete · Saved";
     timerRoundEl.textContent = timer.totalRounds + " / " + timer.totalRounds;
-    timerNextEl.textContent = "총 숨참기 " + fmt(timer.holdTotal);
-    ringEl.style.strokeDashoffset = String(RING_C);
+    timerNextEl.textContent = "Total Hold " + fmt(timer.holdTotal);
+    ringEl.style.strokeDashoffset = "0";
     setToggleIcon(false);
-    timerToggleEl.setAttribute("aria-label", "다시 시작");
+    timerToggleEl.setAttribute("aria-label", "Restart");
     cue("finish");
     saveHistoryRecord();
   }
@@ -1106,6 +1107,7 @@
     timer.completedHolds = 0;
     timer.holdTotal = 0;
     timer.lastBeep = -1;
+    timer.lastSpoken = -1;
     timer.lastShown = -1;
     timer.lastTick = 0;
     var first = timer.phases[0];
@@ -1114,17 +1116,17 @@
     timer.phaseEnd = Date.now() + first.sec * 1000;
     timerScreen.classList.remove("is-paused");
     timerScreen.classList.toggle("is-hold", first.kind === "hold");
-    phaseBadgeEl.textContent = first.kind === "hold" ? "숨참기" : "휴식";
-    timerHintEl.textContent = first.kind === "hold" ? "편하게, 힘 빼고 버티세요" : "천천히 숨을 고르세요";
+    phaseBadgeEl.textContent = first.kind === "hold" ? "HOLD" : "PREPARATION";
+    timerHintEl.textContent = first.kind === "hold" ? "Relax · Stay calm" : "Breathe slowly · Official Top";
     timerTimeEl.textContent = fmt(first.sec);
     timer.lastShown = Math.ceil(first.sec);
-    ringEl.style.strokeDashoffset = "0";
+    ringEl.style.strokeDashoffset = String(RING_C);
     if (ringKnobEl) {
       ringKnobEl.setAttribute("cx", String(160 + RING_R));
       ringKnobEl.setAttribute("cy", "160");
     }
     timerRoundEl.textContent = first.round + " / " + timer.totalRounds;
-    timerNextEl.textContent = timer.phases[1] ? "다음 · " + (timer.phases[1].kind === "hold" ? "숨참기 " : "휴식 ") + fmt(timer.phases[1].sec) : "마지막 라운드";
+    timerNextEl.textContent = timer.phases[1] ? "Next · " + (timer.phases[1].kind === "hold" ? "Hold " : "Preparation ") + fmt(timer.phases[1].sec) : "Final Round";
     setToggleIcon(false);
   }
 

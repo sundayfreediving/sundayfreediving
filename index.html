@@ -21,7 +21,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="선데이">
-<link rel="stylesheet" href="./styles.css?v=1.2.0">
+<link rel="stylesheet" href="./styles.css?v=1.2.1">
 </head>
 <body>
 
@@ -121,7 +121,7 @@
 <div class="app" id="app">
   <header class="topbar">
     <div class="brand">
-      <span class="brand-mark" aria-hidden="true"><img src="./icons/brand-logo.png?v=1.2.0" alt=""></span>
+      <span class="brand-mark" aria-hidden="true"><img src="./icons/brand-logo.png?v=1.2.1" alt=""></span>
       <span class="brand-text">
         <strong>선데이프리다이빙</strong>
         <span class="brand-sub">
@@ -352,11 +352,11 @@
 </div>
 
 <!-- ================= 타이머 (전체 화면) ================= -->
-<div class="timer-screen" id="timerScreen" hidden aria-label="숨참기 타이머">
+<div class="timer-screen" id="timerScreen" hidden aria-label="Apnea Timer">
   <div class="timer-top">
-    <button class="timer-icon-btn" id="timerClose" type="button" aria-label="타이머 닫기"><svg><use href="#i-close"/></svg></button>
-    <span class="timer-mode" id="timerMode">CO2 테이블</span>
-    <button class="timer-icon-btn" id="timerMute" type="button" aria-label="소리 끄기"><svg><use href="#i-volume"/></svg></button>
+    <button class="timer-icon-btn" id="timerClose" type="button" aria-label="Close timer"><svg><use href="#i-close"/></svg></button>
+    <span class="timer-mode" id="timerMode">CO2 TABLE</span>
+    <button class="timer-icon-btn" id="timerMute" type="button" aria-label="Mute"><svg><use href="#i-volume"/></svg></button>
   </div>
 
   <div class="timer-round">
@@ -371,27 +371,27 @@
       <circle class="ring-knob" id="ringKnob" cx="302" cy="160" r="9"></circle>
     </svg>
     <div class="timer-center">
-      <span class="phase-badge" id="phaseBadge">휴식</span>
+      <span class="phase-badge" id="phaseBadge">PREPARATION</span>
       <span class="timer-time" id="timerTime">2:00</span>
-      <span class="timer-hint" id="timerHint">천천히 숨을 고르세요</span>
+      <span class="timer-hint" id="timerHint">Breathe slowly · Official Top</span>
     </div>
   </div>
 
-  <div class="timer-next" id="timerNext">다음 · 숨참기 1:15</div>
+  <div class="timer-next" id="timerNext">Next · Hold 1:15</div>
 
   <div class="timer-controls">
     <button class="ctrl-btn" id="timerReset" type="button">
-      <svg><use href="#i-reset"/></svg><span>리셋</span>
+      <svg><use href="#i-reset"/></svg><span>Reset</span>
     </button>
-    <button class="ctrl-main" id="timerToggle" type="button" aria-label="일시정지">
+    <button class="ctrl-main" id="timerToggle" type="button" aria-label="Pause">
       <svg><use href="#i-pause"/></svg>
     </button>
     <button class="ctrl-btn" id="timerSkip" type="button">
-      <svg><use href="#i-skip"/></svg><span>건너뛰기</span>
+      <svg><use href="#i-skip"/></svg><span>Skip</span>
     </button>
   </div>
 
-  <p class="timer-note" id="timerNote">화면이 켜진 상태로 유지됩니다</p>
+  <p class="timer-note" id="timerNote">Screen stays awake</p>
 </div>
 
 <!-- ================= 공용 시트 ================= -->
@@ -413,7 +413,7 @@
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-<script src="./config.js?v=1.2.0"></script>
-<script src="./app.js?v=1.2.0"></script>
+<script src="./config.js?v=1.2.1"></script>
+<script src="./app.js?v=1.2.1"></script>
 </body>
 </html>
