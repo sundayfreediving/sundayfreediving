@@ -1249,6 +1249,8 @@
 
   function renderScheduleChrome() {
     addScheduleBtn.hidden = !state.isAdmin;
+    var adminTopBtn = $("#adminOpenBtn");
+    if (adminTopBtn) adminTopBtn.classList.toggle("is-admin", !!state.isAdmin);
     renderDay();
   }
 
@@ -1644,6 +1646,8 @@
   function setTab(name) {
     if (["breath", "schedule", "buddy"].indexOf(name) < 0) name = "breath";
     state.tab = name;
+    var adminTopBtn = $("#adminOpenBtn");
+    if (adminTopBtn) adminTopBtn.hidden = (name !== "schedule");
     $$(".view").forEach(function (v) {
       v.classList.toggle("is-active", v.getAttribute("data-view") === name);
     });

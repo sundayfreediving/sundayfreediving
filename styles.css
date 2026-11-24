@@ -1111,6 +1111,19 @@ svg {
   border-color: #f6b81d;
 }
 
+.admin-top-btn {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  color: rgba(255, 255, 255, 0.48);
+}
+
+.admin-top-btn.is-admin {
+  color: #f6b81d;
+}
+
+.admin-top-btn[hidden] { display: none; }
+
 .profile-card[hidden] { display: none; }
 
 .crop-wrap {
