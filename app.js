@@ -957,8 +957,8 @@
     timer.lastSpoken = -1;
 
     if (timer.idx >= timer.phases.length) {
-      if (ph && ph.kind === "hold" && !skipped) {
-        speak("Breath");
+      if (!skipped) {
+        speak(ph && ph.kind === "hold" ? "Breath. Session complete." : "Session complete.");
       }
       finishTimer();
       return;
