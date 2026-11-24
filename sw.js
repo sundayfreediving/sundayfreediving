@@ -1,6 +1,6 @@
 /* 선데이프리다이빙 PWA — Service Worker
    앱 셸을 캐시해 아이폰 홈 화면 앱처럼 오프라인에서도 열리게 합니다. */
-const VERSION = "1.1.0";
+const VERSION = "1.1.1";
 const CACHE_NAME = "sunday-freediving-" + VERSION;
 
 const APP_SHELL = [
@@ -50,16 +50,18 @@ self.addEventListener("fetch", function (event) {
   // Supabase, CDN 등 외부 요청은 서비스워커가 가로채지 않습니다.
   if (url.origin !== self.location.origin) return;
 
-  if (request.mode === "navigate") {
+  if (request.mode === "navigate" || url.pathname.endsWith("/config.js")) {
     event.respondWith(
       fetch(request).then(function (response) {
-        const copy = response.clone();
-        caches.open(CACHE_NAME).then(function (cache) {
-          cache.put("./index.html", copy);
-        });
+        if (response && response.status === 200) {
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then(function (cache) {
+            cache.put(request.mode === "navigate" ? "./index.html" : request, copy);
+          });
+        }
         return response;
       }).catch(function () {
-        return caches.match("./index.html").then(function (cached) {
+        return caches.match(request.mode === "navigate" ? "./index.html" : request).then(function (cached) {
           return cached || caches.match("./");
         });
       })

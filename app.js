@@ -516,103 +516,10 @@
 
   // ---------- 샘플 데이터 ----------
   function seedIfNeeded() {
-    var seeded = lsGet("sfd.seeded", false);
-    var hasSchedules = lsGet("sfd.schedules", null);
-    var hasPosts = lsGet("sfd.posts", null);
-    if (seeded && hasSchedules && hasPosts) return;
-
-    if (!hasSchedules) {
-      var base = startOfToday();
-      function d(n) { return dateKey(addDays(base, n)); }
-      var samples = [
-        {
-          id: uid(), title: "자율연습 (버디 환영)", class_date: d(0), start_time: "19:00", end_time: "21:00",
-          location: "K26", level: "자율연습", capacity: 8,
-          notes: "오늘 저녁 풀 세션 · 버디 페어로 진행합니다."
-        },
-        {
-          id: uid(), title: "AIDA2 코스 1일차", class_date: d(1), start_time: "19:00", end_time: "22:00",
-          location: "K26", level: "AIDA2", capacity: 4,
-          notes: "이론 40분 + 풀 세션. 교재, 수영복, 수건 지참."
-        },
-        {
-          id: uid(), title: "AIDA3 딥다이브", class_date: d(2), start_time: "10:00", end_time: "17:00",
-          location: "딥스테이션", level: "AIDA3", capacity: 6,
-          notes: "08:00 잠실 출발 · 차량 2대 · 장비 대여 가능."
-        },
-        {
-          id: uid(), title: "자율연습 (버디 환영)", class_date: d(4), start_time: "19:00", end_time: "21:00",
-          location: "K26", level: "자율연습", capacity: 8,
-          notes: "버디 페어로 진행합니다. 입장비는 개별 결제."
-        },
-        {
-          id: uid(), title: "AIDA2 코스 2일차", class_date: d(5), start_time: "09:00", end_time: "18:00",
-          location: "잠실", level: "AIDA2", capacity: 4,
-          notes: "이론 시험 포함. 09:00까지 입장 완료."
-        },
-        {
-          id: uid(), title: "AIDA1 체험 클래스", class_date: d(-1), start_time: "19:00", end_time: "21:00",
-          location: "K26", level: "AIDA1", capacity: 6,
-          notes: "첫 프리다이빙 · 장비 대여 포함."
-        },
-        {
-          id: uid(), title: "딥 트레이닝 데이", class_date: d(9), start_time: "10:00", end_time: "16:00",
-          location: "딥스테이션", level: "트레이닝", capacity: 6,
-          notes: "FIM · CNF 자율 트레이닝. 버디 필수."
-        },
-        {
-          id: uid(), title: "AIDA3 코스 1일차", class_date: d(12), start_time: "19:00", end_time: "22:00",
-          location: "K26", level: "AIDA3", capacity: 4,
-          notes: "이론 + 스태틱 세션."
-        },
-        {
-          id: uid(), title: "AIDA4 코스", class_date: d(21), start_time: "08:00", end_time: "18:00",
-          location: "딥스테이션", level: "AIDA4", capacity: 3,
-          notes: "예약 확정 · 서약서 제출 완료."
-        },
-        {
-          id: uid(), title: "보홀 투어 (5박 6일)", class_date: d(40), start_time: "00:00", end_time: "23:59",
-          location: "보홀", level: "투어", capacity: 8,
-          notes: "상세 일정과 항공권은 개별 안내드립니다."
-        }
-      ];
-      lsSet("sfd.schedules", samples);
-    }
-
-    if (!hasPosts) {
-      var now = Date.now();
-      function ago(h) { return new Date(now - h * 3600 * 1000).toISOString(); }
-      var p1 = uid(), p2 = uid(), p3 = uid(), p4 = uid();
-      var posts = [
-        {
-          id: p1, nickname: "물개", content: "이번 주말 K26에서 AIDA2 연습하실 분 계신가요? 버디 구해요 🌊",
-          tag_date: dateKey(addDays(startOfToday(), 2)), tag_pool: "K26", created_at: ago(2)
-        },
-        {
-          id: p2, nickname: "하프물범", content: "딥스테이션 같이 가실 분! 차량 여유 있어요. 08:00 잠실 출발.",
-          tag_date: dateKey(addDays(startOfToday(), 4)), tag_pool: "딥스테이션", created_at: ago(5)
-        },
-        {
-          id: p3, nickname: "프리다이버K", content: "잠실 평일 저녁 자율연습 같이 하실 분 구합니다. 초보도 환영이에요.",
-          tag_date: "", tag_pool: "잠실", created_at: ago(27)
-        },
-        {
-          id: p4, nickname: "숨참기장인", content: "오늘 O2 테이블 8라운드 같이 돌리실 분? 2:00 휴식으로 천천히 갑니다.",
-          tag_date: "", tag_pool: "", created_at: ago(50)
-        }
-      ];
-      var comments = [
-        { id: uid(), post_id: p1, nickname: "물개", content: "토요일 오전 좋아요! 10시 어때요?", created_at: ago(1.5) },
-        { id: uid(), post_id: p1, nickname: "프리다이버K", content: "저도 끼워주세요 🙌", created_at: ago(1) },
-        { id: uid(), post_id: p2, nickname: "하프물범", content: "2자리 남았습니다!", created_at: ago(4) },
-        { id: uid(), post_id: p3, nickname: "숨참기장인", content: "수요일 저녁 가능해요.", created_at: ago(20) },
-        { id: uid(), post_id: p4, nickname: "물개", content: "O2는 아직 무리라 CO2로 같이 해요 ㅎㅎ", created_at: ago(45) }
-      ];
-      lsSet("sfd.posts", posts);
-      lsSet("sfd.comments", comments);
-    }
-
     lsSet("sfd.seeded", true);
+    if (!Array.isArray(lsGet("sfd.schedules", null))) lsSet("sfd.schedules", []);
+    if (!Array.isArray(lsGet("sfd.posts", null))) lsSet("sfd.posts", []);
+    if (!Array.isArray(lsGet("sfd.comments", null))) lsSet("sfd.comments", []);
   }
 
   // ---------- 토스트 / 시트 ----------
@@ -1212,7 +1119,7 @@
           + '<button type="button" class="del" data-act="del" data-id="' + esc(s.id) + '" aria-label="수업 삭제"><svg><use href="#i-trash"/></svg></button>'
           + '</div>'
         : "";
-      return '<article class="event-card" style="--lv:' + color + '">'
+      return '<article class="event-card" data-id="' + esc(s.id) + '" style="--lv:' + color + (state.isAdmin ? ';cursor:pointer' : '') + '">'
         + '<div class="event-top">'
         + '<h3 class="event-title">' + esc(s.title) + '</h3>'
         + actions
@@ -1283,10 +1190,28 @@
       + '</div>'
       + '<div class="form-row"><label for="evNotes">메모 (선택)</label><textarea id="evNotes" maxlength="300" placeholder="준비물, 집합 시간 등">' + esc(s.notes || "") + '</textarea></div>'
       + '<div class="form-actions">'
+      + (isEdit ? '<button type="button" class="btn-ghost" id="evDelete" style="color:var(--danger,#c0392b)">삭제</button>' : '')
       + '<button type="button" class="btn-primary" id="evSave">' + (isEdit ? "저장" : "추가") + '</button>'
       + '</div>'
       + '<p class="sheet-note">추가한 일정은 앱을 여는 모든 수강생에게 바로 보입니다.</p>'
     );
+
+    if (isEdit && $("#evDelete")) {
+      $("#evDelete").addEventListener("click", async function () {
+        if (!window.confirm("'" + item.title + "' 수업을 삭제할까요?")) return;
+        var delBtn = $("#evDelete");
+        delBtn.disabled = true;
+        try {
+          await deleteScheduleRecord(item.id);
+          closeSheet();
+          toast("수업을 삭제했어요.");
+        } catch (err) {
+          console.error(err);
+          toast("삭제하지 못했어요: " + (err.message || "오류"));
+          delBtn.disabled = false;
+        }
+      });
+    }
 
     $("#evSave").addEventListener("click", async function () {
       var title = $("#evTitle").value.trim();
@@ -1802,29 +1727,44 @@
     calGridEl.addEventListener("click", function (e) {
       var cell = e.target.closest("[data-key]");
       if (!cell) return;
-      state.selected = cell.getAttribute("data-key");
+      var key = cell.getAttribute("data-key");
+      var wasSelected = state.selected === key;
+      state.selected = key;
       renderCalendar();
       renderDay();
+      if (state.isAdmin && wasSelected) {
+        var list = eventsOn(key);
+        if (list.length === 1) openScheduleForm(list[0]);
+        else if (list.length === 0) openScheduleForm(null);
+      }
     });
     addScheduleBtn.addEventListener("click", function () { openScheduleForm(null); });
     dayListEl.addEventListener("click", async function (e) {
       var btn = e.target.closest("[data-act]");
-      if (!btn) return;
-      var id = btn.getAttribute("data-id");
-      var item = state.schedules.filter(function (s) { return s.id === id; })[0];
-      if (!item) return;
-      if (btn.getAttribute("data-act") === "edit") {
-        openScheduleForm(item);
-      } else {
-        if (!window.confirm("'" + item.title + "' 수업을 삭제할까요?")) return;
-        try {
-          await deleteScheduleRecord(id);
-          toast("수업을 삭제했어요.");
-        } catch (err) {
-          console.error(err);
-          toast("삭제하지 못했어요: " + (err.message || "오류"));
+      if (btn) {
+        var id = btn.getAttribute("data-id");
+        var item = state.schedules.filter(function (s) { return s.id === id; })[0];
+        if (!item) return;
+        if (btn.getAttribute("data-act") === "edit") {
+          openScheduleForm(item);
+        } else {
+          if (!window.confirm("'" + item.title + "' 수업을 삭제할까요?")) return;
+          try {
+            await deleteScheduleRecord(id);
+            toast("수업을 삭제했어요.");
+          } catch (err) {
+            console.error(err);
+            toast("삭제하지 못했어요: " + (err.message || "오류"));
+          }
         }
+        return;
       }
+      if (!state.isAdmin) return;
+      var card = e.target.closest(".event-card[data-id]");
+      if (!card) return;
+      var cardId = card.getAttribute("data-id");
+      var cardItem = state.schedules.filter(function (s) { return s.id === cardId; })[0];
+      if (cardItem) openScheduleForm(cardItem);
     });
 
     // 버디 작성
