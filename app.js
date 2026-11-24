@@ -822,6 +822,30 @@
     }
   }
 
+  function unlockSpeech() {
+    if (!("speechSynthesis" in window)) return;
+    try {
+      window.speechSynthesis.cancel();
+      var u = new SpeechSynthesisUtterance("");
+      u.volume = 0;
+      u.lang = "en-US";
+      window.speechSynthesis.speak(u);
+    } catch (e) { /* ignore */ }
+  }
+
+  function speak(text, rate) {
+    if (timer.muted || !("speechSynthesis" in window)) return;
+    try {
+      window.speechSynthesis.cancel();
+      var u = new SpeechSynthesisUtterance(text);
+      u.lang = "en-US";
+      u.rate = rate || 1.05;
+      u.pitch = 1.0;
+      u.volume = 1.0;
+      window.speechSynthesis.speak(u);
+    } catch (e) { /* ignore */ }
+  }
+
   var wakeLock = null;
 
   function requestWake() {
@@ -863,6 +887,7 @@
     var table = buildTable();
     if (!table.length) return;
     ensureAudio();
+    unlockSpeech();
 
     timer.phases = buildPhases(table);
     timer.mode = state.tableType;
@@ -873,6 +898,7 @@
     timer.finished = false;
     timer.paused = false;
     timer.lastBeep = -1;
+    timer.lastSpoken = -1;
     timer.lastShown = -1;
     timer.remaining = timer.phases[0].sec;
     timer.phaseEnd = Date.now() + timer.remaining * 1000;
@@ -928,8 +954,12 @@
 
     timer.idx += 1;
     timer.lastBeep = -1;
+    timer.lastSpoken = -1;
 
     if (timer.idx >= timer.phases.length) {
+      if (ph && ph.kind === "hold" && !skipped) {
+        speak("Breath");
+      }
       finishTimer();
       return;
     }
@@ -945,6 +975,10 @@
     phaseBadgeEl.textContent = next.kind === "hold" ? "숨참기" : "휴식";
     timerHintEl.textContent = next.kind === "hold" ? "편하게, 힘 빼고 버티세요" : "천천히 숨을 고르세요";
     cue(next.kind === "hold" ? "hold" : "rest");
+    if (!skipped) {
+      if (next.kind === "hold") speak("Official top");
+      else if (ph && ph.kind === "hold") speak("Breath");
+    }
     updateTimerUI(true);
 
     timer.raf = requestAnimationFrame(frame);
@@ -955,6 +989,27 @@
     if (sec <= 3 && sec > 0 && sec !== timer.lastBeep) {
       timer.lastBeep = sec;
       cue("tick");
+    }
+    if (sec <= 0 || sec === timer.lastSpoken) return;
+    var ph = timer.phases[timer.idx];
+    if (!ph) return;
+    var line = "";
+    if (ph.kind === "breathe") {
+      if (sec === 120) line = "Two minutes";
+      else if (sec === 60) line = "One minute";
+      else if (sec === 30) line = "Thirty seconds";
+      else if (sec === 20) line = "Twenty seconds";
+      else if (sec === 10) line = "Ten seconds";
+      else if (sec >= 1 && sec <= 9) line = String(sec);
+    } else if (ph.kind === "hold") {
+      if (sec === 30) line = "Thirty seconds";
+      else if (sec === 20) line = "Twenty seconds";
+      else if (sec === 10) line = "Ten seconds";
+      else if (sec >= 1 && sec <= 9) line = String(sec);
+    }
+    if (line) {
+      timer.lastSpoken = sec;
+      speak(line, sec <= 9 ? 1.12 : 1.02);
     }
   }
 
