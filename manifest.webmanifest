@@ -19,6 +19,7 @@
     { "src": "./icons/apple-touch-icon.png", "sizes": "180x180", "type": "image/png", "purpose": "any" }
   ],
   "shortcuts": [
+    { "name": "홈 · 로그북", "url": "./?tab=home", "icons": [{ "src": "./icons/icon-192.png", "sizes": "192x192" }] },
     { "name": "Apnea Training", "url": "./?tab=breath", "icons": [{ "src": "./icons/icon-192.png", "sizes": "192x192" }] },
     { "name": "수업일정", "url": "./?tab=schedule", "icons": [{ "src": "./icons/icon-192.png", "sizes": "192x192" }] },
     { "name": "버디 찾기", "url": "./?tab=buddy", "icons": [{ "src": "./icons/icon-192.png", "sizes": "192x192" }] }

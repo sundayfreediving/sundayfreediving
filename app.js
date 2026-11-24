@@ -197,14 +197,29 @@
   function savePrefs() { lsSet("sfd.prefs", prefs); }
 
   // ---------- 상태 ----------
+  var DISCIPLINES = [
+    { code: "STA", name: "스태틱", unit: "time", bench: 300, hex: true, depth: false },
+    { code: "DYN", name: "다이나믹", unit: "m", bench: 150, hex: true, depth: false },
+    { code: "DYNB", name: "바이핀 (풀)", unit: "m", bench: 150, hex: false, depth: false },
+    { code: "DNF", name: "노핀 (풀)", unit: "m", bench: 100, hex: true, depth: false },
+    { code: "CWT", name: "콘스탄트", unit: "m", bench: 60, hex: true, depth: true },
+    { code: "CWTB", name: "바이핀 (수심)", unit: "m", bench: 60, hex: false, depth: true },
+    { code: "CNF", name: "노핀 (수심)", unit: "m", bench: 45, hex: true, depth: true },
+    { code: "FIM", name: "프리이머전", unit: "m", bench: 60, hex: true, depth: true }
+  ];
+
+  var HEX_DISCIPLINES = DISCIPLINES.filter(function (d) { return d.hex; });
+
   var state = {
-    tab: "breath",
+    tab: "home",
     tableType: "co2",
     pb: 150,
     isAdmin: false,
     adminPin: "",
     adminEmail: "",
     history: [],
+    logbook: [],
+    logFilter: "ALL",
     schedules: [],
     posts: [],
     comments: [],
@@ -1643,7 +1658,7 @@
 
   // ---------- 탭 ----------
   function setTab(name) {
-    if (["breath", "schedule", "buddy"].indexOf(name) < 0) name = "breath";
+    if (["home", "breath", "schedule", "buddy"].indexOf(name) < 0) name = "home";
     state.tab = name;
     var adminTopBtn = $("#adminOpenBtn");
     if (adminTopBtn) adminTopBtn.hidden = (name !== "schedule");
@@ -1659,11 +1674,314 @@
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
+  // ---------- 홈 · 로그북 & 6각형 그래프 ----------
+  function findDisc(code) {
+    for (var i = 0; i < DISCIPLINES.length; i++) {
+      if (DISCIPLINES[i].code === code) return DISCIPLINES[i];
+    }
+    return DISCIPLINES[0];
+  }
+
+  function formatDiscVal(code, val) {
+    var d = findDisc(code);
+    if (val === null || val === undefined || isNaN(val)) return "-";
+    if (d.unit === "time") return fmt(val);
+    return (Math.round(val * 10) / 10) + "m";
+  }
+
+  function formatDiscDelta(code, delta) {
+    var d = findDisc(code);
+    if (delta === 0) return "유지";
+    var sign = delta > 0 ? "+" : "-";
+    var abs = Math.abs(delta);
+    if (d.unit === "time") return sign + fmtLong(abs);
+    return sign + (Math.round(abs * 10) / 10) + "m";
+  }
+
+  function getDiscEntries(code) {
+    return state.logbook.filter(function (e) { return e.disc === code; })
+      .sort(function (a, b) {
+        if (a.date !== b.date) return b.date.localeCompare(a.date);
+        return (b.createdAt || 0) - (a.createdAt || 0);
+      });
+  }
+
+  function getDiscStats(code) {
+    var list = getDiscEntries(code);
+    if (!list.length) return { pb: null, latest: null, prev: null, delta: null, count: 0 };
+    var pb = list[0].value;
+    for (var i = 1; i < list.length; i++) {
+      if (list[i].value > pb) pb = list[i].value;
+    }
+    var latest = list[0].value;
+    var prev = list.length > 1 ? list[1].value : null;
+    var delta = prev !== null ? Math.round((latest - prev) * 10) / 10 : null;
+    return { pb: pb, latest: latest, prev: prev, delta: delta, count: list.length };
+  }
+
+  function saveLogbook() {
+    lsSet("sfd.logbook", state.logbook);
+  }
+
+  function renderRadarChart() {
+    var svg = $("#radarSvg");
+    if (!svg) return;
+    var cx = 160;
+    var cy = 143;
+    var R = 92;
+    var n = HEX_DISCIPLINES.length; // 6
+    var html = "";
+
+    // Concentric hexagon grid (25%, 50%, 75%, 100%)
+    [0.25, 0.5, 0.75, 1].forEach(function (ratio) {
+      var pts = [];
+      for (var i = 0; i < n; i++) {
+        var ang = (-Math.PI / 2) + (2 * Math.PI * i / n);
+        pts.push((cx + R * ratio * Math.cos(ang)).toFixed(1) + "," + (cy + R * ratio * Math.sin(ang)).toFixed(1));
+      }
+      html += '<polygon points="' + pts.join(" ") + '" fill="none" stroke="var(--line-strong)" stroke-width="1" />';
+    });
+
+    // Axes lines
+    for (var i = 0; i < n; i++) {
+      var ang = (-Math.PI / 2) + (2 * Math.PI * i / n);
+      var x2 = (cx + R * Math.cos(ang)).toFixed(1);
+      var y2 = (cy + R * Math.sin(ang)).toFixed(1);
+      html += '<line x1="' + cx + '" y1="' + cy + '" x2="' + x2 + '" y2="' + y2 + '" stroke="var(--line)" stroke-width="1" />';
+    }
+
+    // Data polygon & vertex points
+    var dataPts = [];
+    var dotsHtml = "";
+    var labelsHtml = "";
+
+    HEX_DISCIPLINES.forEach(function (d, idx) {
+      var st = getDiscStats(d.code);
+      var val = st.pb || 0;
+      var maxScale = Math.max(d.bench, val || 0);
+      var norm = val > 0 ? clamp(val / maxScale, 0.08, 1) : 0.04;
+      var ang = (-Math.PI / 2) + (2 * Math.PI * idx / n);
+      var px = cx + R * norm * Math.cos(ang);
+      var py = cy + R * norm * Math.sin(ang);
+      dataPts.push(px.toFixed(1) + "," + py.toFixed(1));
+
+      if (val > 0) {
+        dotsHtml += '<circle cx="' + px.toFixed(1) + '" cy="' + py.toFixed(1) + '" r="4.2" fill="#f6b81d" stroke="var(--surface)" stroke-width="1.6" />';
+      }
+
+      var lx = cx + (R + 24) * Math.cos(ang);
+      var ly = cy + (R + 22) * Math.sin(ang);
+      var anchor = "middle";
+      if (Math.cos(ang) > 0.25) anchor = "start";
+      else if (Math.cos(ang) < -0.25) anchor = "end";
+      var dyOffset = Math.sin(ang) < -0.5 ? -3 : (Math.sin(ang) > 0.5 ? 6 : 2);
+
+      labelsHtml += '<text x="' + lx.toFixed(1) + '" y="' + (ly + dyOffset).toFixed(1) + '" text-anchor="' + anchor + '" fill="var(--ink)" font-size="11.5" font-weight="800">' + d.code + '</text>';
+      labelsHtml += '<text x="' + lx.toFixed(1) + '" y="' + (ly + dyOffset + 13).toFixed(1) + '" text-anchor="' + anchor + '" fill="' + (val > 0 ? "#f6b81d" : "var(--ink-3)") + '" font-size="10.5" font-weight="700">' + (val > 0 ? formatDiscVal(d.code, val) : "-") + '</text>';
+    });
+
+    html += '<polygon points="' + dataPts.join(" ") + '" fill="rgba(246, 184, 29, 0.22)" stroke="#f6b81d" stroke-width="2.2" stroke-linejoin="round" />';
+    html += dotsHtml + labelsHtml;
+    svg.innerHTML = html;
+  }
+
+  function renderDisciplineRows() {
+    var wrap = $("#disciplineRows");
+    if (!wrap) return;
+    wrap.innerHTML = DISCIPLINES.map(function (d) {
+      var st = getDiscStats(d.code);
+      var pbText = st.pb !== null ? "최고 " + formatDiscVal(d.code, st.pb) : "기록 없음";
+      var deltaHtml = "";
+      if (st.delta !== null && st.delta !== 0) {
+        deltaHtml = '<span class="disc-delta ' + (st.delta > 0 ? "up" : "down") + '">'
+          + (st.delta > 0 ? "▲ " : "▼ ") + formatDiscDelta(d.code, st.delta) + '</span>';
+      }
+      var inputHtml = d.unit === "time"
+        ? '<input class="disc-num disc-num-sm" type="text" inputmode="numeric" maxlength="2" placeholder="분" data-disc-min="' + d.code + '" aria-label="' + d.code + ' 분">'
+          + '<span class="disc-unit">:</span>'
+          + '<input class="disc-num disc-num-sm" type="text" inputmode="numeric" maxlength="2" placeholder="초" data-disc-sec="' + d.code + '" aria-label="' + d.code + ' 초">'
+        : '<input class="disc-num" type="text" inputmode="decimal" maxlength="6" placeholder="0" data-disc-num="' + d.code + '" aria-label="' + d.code + ' 기록">'
+          + '<span class="disc-unit">m</span>';
+
+      return '<div class="disc-row">'
+        + '<div class="disc-left">'
+        +   '<span class="disc-badge' + (d.hex ? " is-core" : "") + '">' + d.code + '</span>'
+        +   '<div class="disc-info">'
+        +     '<span class="disc-name">' + d.name + '</span>'
+        +     '<span class="disc-pb">' + pbText + deltaHtml + '</span>'
+        +   '</div>'
+        + '</div>'
+        + '<div class="disc-input-wrap">'
+        +   inputHtml
+        +   '<button type="button" class="disc-save-btn" data-disc-save="' + d.code + '">저장</button>'
+        + '</div>'
+        + '</div>';
+    }).join("");
+  }
+
+  function renderLogbook() {
+    var filterWrap = $("#logFilterRow");
+    var listWrap = $("#logbookList");
+    var emptyEl = $("#logbookEmpty");
+    var countEl = $("#logCount");
+    if (!filterWrap || !listWrap) return;
+
+    var filters = [{ code: "ALL", label: "전체" }].concat(DISCIPLINES.map(function (d) {
+      return { code: d.code, label: d.code };
+    }));
+    filterWrap.innerHTML = filters.map(function (f) {
+      var on = state.logFilter === f.code;
+      return '<button type="button" class="log-filter-pill' + (on ? " is-active" : "") + '" data-log-filter="' + f.code + '">' + f.label + '</button>';
+    }).join("");
+
+    // Compute per-entry delta vs previous record of the same discipline
+    var byDisc = {};
+    var sortedAsc = state.logbook.slice().sort(function (a, b) {
+      if (a.date !== b.date) return a.date.localeCompare(b.date);
+      return (a.createdAt || 0) - (b.createdAt || 0);
+    });
+    var deltaMap = {};
+    sortedAsc.forEach(function (entry) {
+      if (byDisc[entry.disc] !== undefined) {
+        deltaMap[entry.id] = Math.round((entry.value - byDisc[entry.disc]) * 10) / 10;
+      } else {
+        deltaMap[entry.id] = null;
+      }
+      byDisc[entry.disc] = entry.value;
+    });
+
+    var shown = state.logbook.filter(function (e) {
+      return state.logFilter === "ALL" || e.disc === state.logFilter;
+    }).sort(function (a, b) {
+      if (a.date !== b.date) return b.date.localeCompare(a.date);
+      return (b.createdAt || 0) - (a.createdAt || 0);
+    });
+
+    if (countEl) countEl.textContent = shown.length + "건";
+    if (emptyEl) emptyEl.hidden = shown.length > 0;
+
+    listWrap.innerHTML = shown.map(function (e) {
+      var delta = deltaMap[e.id];
+      var deltaBadge = '<span class="log-delta-pill same">첫 기록</span>';
+      if (delta !== null) {
+        if (delta > 0) deltaBadge = '<span class="log-delta-pill up">▲ ' + formatDiscDelta(e.disc, delta) + '</span>';
+        else if (delta < 0) deltaBadge = '<span class="log-delta-pill down">▼ ' + formatDiscDelta(e.disc, delta) + '</span>';
+        else deltaBadge = '<span class="log-delta-pill same">유지</span>';
+      }
+      var sub = e.date + (e.memo ? " · " + esc(e.memo) : "");
+      return '<div class="log-item">'
+        + '<div class="log-item-left">'
+        +   '<span class="disc-badge' + (findDisc(e.disc).hex ? " is-core" : "") + '">' + e.disc + '</span>'
+        +   '<div class="log-item-main">'
+        +     '<div class="log-item-top"><span class="log-val">' + formatDiscVal(e.disc, e.value) + '</span>' + deltaBadge + '</div>'
+        +     '<span class="log-item-sub">' + sub + '</span>'
+        +   '</div>'
+        + '</div>'
+        + '<button type="button" class="log-del-btn" data-log-del="' + esc(e.id) + '" aria-label="기록 삭제">×</button>'
+        + '</div>';
+    }).join("");
+  }
+
+  function renderHome() {
+    var totalEl = $("#kpiTotalLogs");
+    var staEl = $("#kpiBestSta");
+    var depthEl = $("#kpiBestDepth");
+    if (totalEl) totalEl.textContent = state.logbook.length + "회";
+    var staStats = getDiscStats("STA");
+    if (staEl) staEl.textContent = staStats.pb !== null ? formatDiscVal("STA", staStats.pb) : "-";
+    var bestDepth = 0;
+    DISCIPLINES.forEach(function (d) {
+      if (d.depth) {
+        var st = getDiscStats(d.code);
+        if (st.pb !== null && st.pb > bestDepth) bestDepth = st.pb;
+      }
+    });
+    if (depthEl) depthEl.textContent = bestDepth > 0 ? bestDepth + "m" : "-";
+
+    renderRadarChart();
+    renderDisciplineRows();
+    renderLogbook();
+  }
+
   // ---------- 이벤트 바인딩 ----------
   function bindUI() {
     $$(".tabbar .tab").forEach(function (b) {
       b.addEventListener("click", function () { setTab(b.getAttribute("data-tab")); });
     });
+
+    // 홈 · 로그북
+    var discWrap = $("#disciplineRows");
+    if (discWrap) {
+      discWrap.addEventListener("click", function (ev) {
+        var btn = ev.target.closest("[data-disc-save]");
+        if (!btn) return;
+        var code = btn.getAttribute("data-disc-save");
+        var d = findDisc(code);
+        var val = null;
+        if (d.unit === "time") {
+          var minEl = discWrap.querySelector('[data-disc-min="' + code + '"]');
+          var secEl = discWrap.querySelector('[data-disc-sec="' + code + '"]');
+          var mins = parseInt((minEl && minEl.value || "0").trim(), 10) || 0;
+          var secs = parseInt((secEl && secEl.value || "0").trim(), 10) || 0;
+          if (mins < 0 || secs < 0 || secs > 59 || (mins === 0 && secs === 0)) {
+            toast("분과 초를 올바르게 입력해 주세요.");
+            return;
+          }
+          val = mins * 60 + secs;
+          if (minEl) minEl.value = "";
+          if (secEl) secEl.value = "";
+        } else {
+          var numEl = discWrap.querySelector('[data-disc-num="' + code + '"]');
+          var raw = (numEl && numEl.value || "").trim().replace(/,/g, ".");
+          var num = parseFloat(raw);
+          if (isNaN(num) || num <= 0) {
+            toast("0보다 큰 숫자를 입력해 주세요.");
+            return;
+          }
+          val = Math.round(num * 10) / 10;
+          if (numEl) numEl.value = "";
+        }
+        var dateEl = $("#logDateInput");
+        var memoEl = $("#logMemoInput");
+        var dateVal = (dateEl && dateEl.value) ? dateEl.value : todayKey();
+        var memoVal = memoEl ? memoEl.value.trim() : "";
+        state.logbook.push({
+          id: uid(),
+          disc: code,
+          value: val,
+          date: dateVal,
+          memo: memoVal,
+          createdAt: Date.now()
+        });
+        saveLogbook();
+        if (memoEl) memoEl.value = "";
+        renderHome();
+        toast(code + " " + formatDiscVal(code, val) + " 기록했어요!");
+      });
+    }
+
+    var filterWrap = $("#logFilterRow");
+    if (filterWrap) {
+      filterWrap.addEventListener("click", function (ev) {
+        var btn = ev.target.closest("[data-log-filter]");
+        if (!btn) return;
+        state.logFilter = btn.getAttribute("data-log-filter");
+        renderLogbook();
+      });
+    }
+
+    var logListWrap = $("#logbookList");
+    if (logListWrap) {
+      logListWrap.addEventListener("click", function (ev) {
+        var btn = ev.target.closest("[data-log-del]");
+        if (!btn) return;
+        var id = btn.getAttribute("data-log-del");
+        state.logbook = state.logbook.filter(function (e) { return e.id !== id; });
+        saveLogbook();
+        renderHome();
+        toast("기록을 삭제했어요.");
+      });
+    }
 
     // PB
     $("#pbEditBtn").addEventListener("click", function () {
@@ -2282,11 +2600,15 @@
     state.pb = prefs.pb;
     state.tableType = prefs.tableType;
     state.history = lsGet("sfd.history", []);
+    state.logbook = lsGet("sfd.logbook", []);
     state.isAdmin = !cloudConfigured() ? lsGet("sfd.admin", false) === true : false;
     state.viewMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
     state.selected = todayKey();
+    var logDateEl = $("#logDateInput");
+    if (logDateEl) logDateEl.value = todayKey();
 
     bindUI();
+    renderHome();
     renderBreath();
     renderScheduleChrome();
     renderPosts();
