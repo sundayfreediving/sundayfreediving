@@ -1028,28 +1028,35 @@ svg {
   white-space: pre-wrap;
 }
 
-.fab {
-  position: fixed;
-  right: max(18px, calc((100vw - 560px) / 2 + 18px));
-  bottom: calc(var(--tabbar-h) + var(--safe-bottom) + 18px);
-  width: 56px;
-  height: 56px;
+.schedule-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 4px 2px;
+  min-height: 36px;
+}
+
+.schedule-sync-note {
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+.fab-inline {
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
   display: grid;
   place-items: center;
+  flex-shrink: 0;
   color: #fff;
   background: linear-gradient(150deg, #0b5a72, #0f97a8);
-  box-shadow: 0 14px 28px rgba(8, 70, 96, 0.36), inset 0 1px 0 rgba(255, 255, 255, 0.2);
-  z-index: 25;
-  animation: fabIn 0.3s var(--ease) both;
+  box-shadow: 0 6px 14px rgba(8, 70, 96, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.2);
 }
 
-.fab svg { width: 26px; height: 26px; }
-
-@keyframes fabIn {
-  from { opacity: 0; transform: scale(0.7); }
-  to { opacity: 1; transform: scale(1); }
-}
+.fab-inline[hidden] { display: none; }
+.fab-inline svg { width: 18px; height: 18px; }
 
 /* ---------- 버디 ---------- */
 .composer { padding: 14px; }
