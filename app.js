@@ -1815,6 +1815,8 @@
     });
 
     // 프로필 만들기
+    var profileCardEl = $("#profileCard");
+    var profileFabBtn = $("#profileFabBtn");
     var profileNickEl = $("#profileNickname");
     var profileBioEl = $("#profileBio");
     var profileAvatarPreviewEl = $("#profileAvatarPreview");
@@ -1822,18 +1824,28 @@
     var profilePhotoClearBtn = $("#profilePhotoClearBtn");
     var profileBodyEl = $("#profileBody");
     var profileToggleBtn = $("#profileToggleBtn");
+    var profileExpanded = !(prefs.nickname || prefs.avatar || prefs.bio);
 
     function renderProfileCard() {
       if (!profileNickEl) return;
       profileNickEl.value = prefs.nickname || "";
       profileBioEl.value = prefs.bio || "";
+      var initial = (prefs.nickname || "선").trim().slice(0, 1) || "선";
       if (prefs.avatar) {
         profileAvatarPreviewEl.innerHTML = '<img src="' + esc(prefs.avatar) + '" alt="내 프로필 사진">';
+        if (profileFabBtn) profileFabBtn.innerHTML = '<img src="' + esc(prefs.avatar) + '" alt="내 프로필">';
         profilePhotoClearBtn.hidden = false;
       } else {
-        var initial = (prefs.nickname || "선").trim().slice(0, 1) || "선";
         profileAvatarPreviewEl.textContent = initial;
+        if (profileFabBtn) profileFabBtn.textContent = initial;
         profilePhotoClearBtn.hidden = true;
+      }
+      if (profileCardEl) profileCardEl.hidden = !profileExpanded;
+      if (profileBodyEl) profileBodyEl.hidden = false;
+      if (profileToggleBtn) profileToggleBtn.textContent = "접기";
+      if (profileFabBtn) {
+        profileFabBtn.setAttribute("aria-expanded", profileExpanded ? "true" : "false");
+        profileFabBtn.title = profileExpanded ? "프로필 줄이기" : "내 프로필 열기";
       }
       if (!postNicknameEl.value.trim() && prefs.nickname) {
         postNicknameEl.value = prefs.nickname;
@@ -1841,11 +1853,112 @@
     }
     renderProfileCard();
 
+    if (profileFabBtn) {
+      profileFabBtn.addEventListener("click", function () {
+        profileExpanded = !profileExpanded;
+        renderProfileCard();
+      });
+    }
+
     profileToggleBtn.addEventListener("click", function () {
-      var hidden = !profileBodyEl.hidden;
-      profileBodyEl.hidden = hidden;
-      profileToggleBtn.textContent = hidden ? "열기" : "접기";
+      profileExpanded = false;
+      renderProfileCard();
     });
+
+    function openPhotoCropSheet(img) {
+      var viewSize = 220;
+      var baseScale = Math.max(viewSize / img.width, viewSize / img.height);
+      var zoom = 1;
+      var offsetX = 0;
+      var offsetY = 0;
+
+      openSheet("프로필 사진 조절",
+        '<div class="crop-wrap">'
+        + '<div class="crop-viewport" id="cropViewport"><img id="cropImg" alt="자르기 미리보기"></div>'
+        + '<p class="crop-hint">사진을 드래그해 위치를 맞추고 슬라이더로 크기를 조절하세요.</p>'
+        + '<div class="crop-zoom-row"><span>작게</span><input type="range" id="cropZoom" min="1" max="3" step="0.02" value="1"><span>크게</span></div>'
+        + '</div>'
+        + '<div class="form-actions">'
+        + '<button type="button" class="btn-ghost" id="cropCancelBtn">취소</button>'
+        + '<button type="button" class="btn-primary" id="cropApplyBtn" style="flex:1">이대로 저장</button>'
+        + '</div>'
+      );
+
+      var vp = $("#cropViewport");
+      var cropImg = $("#cropImg");
+      var zoomEl = $("#cropZoom");
+      cropImg.src = img.src;
+      cropImg.style.width = img.width + "px";
+      cropImg.style.height = img.height + "px";
+
+      function clampOffsets() {
+        var s = baseScale * zoom;
+        var maxX = Math.max(0, (img.width * s - viewSize) / 2);
+        var maxY = Math.max(0, (img.height * s - viewSize) / 2);
+        offsetX = Math.max(-maxX, Math.min(maxX, offsetX));
+        offsetY = Math.max(-maxY, Math.min(maxY, offsetY));
+      }
+
+      function renderCrop() {
+        clampOffsets();
+        var s = baseScale * zoom;
+        cropImg.style.transform = "translate(-50%, -50%) translate(" + offsetX + "px, " + offsetY + "px) scale(" + s + ")";
+      }
+      renderCrop();
+
+      zoomEl.addEventListener("input", function () {
+        zoom = parseFloat(zoomEl.value) || 1;
+        renderCrop();
+      });
+
+      var dragging = false;
+      var startX = 0;
+      var startY = 0;
+      var origX = 0;
+      var origY = 0;
+
+      vp.addEventListener("pointerdown", function (e) {
+        dragging = true;
+        startX = e.clientX;
+        startY = e.clientY;
+        origX = offsetX;
+        origY = offsetY;
+        if (vp.setPointerCapture) vp.setPointerCapture(e.pointerId);
+      });
+      vp.addEventListener("pointermove", function (e) {
+        if (!dragging) return;
+        offsetX = origX + (e.clientX - startX);
+        offsetY = origY + (e.clientY - startY);
+        renderCrop();
+      });
+      function endDrag() { dragging = false; }
+      vp.addEventListener("pointerup", endDrag);
+      vp.addEventListener("pointercancel", endDrag);
+
+      $("#cropCancelBtn").addEventListener("click", closeSheet);
+      $("#cropApplyBtn").addEventListener("click", function () {
+        var outSize = 240;
+        var canvas = document.createElement("canvas");
+        canvas.width = outSize;
+        canvas.height = outSize;
+        var ctx = canvas.getContext("2d");
+        var s = baseScale * zoom;
+        var ratio = outSize / viewSize;
+        ctx.fillStyle = "#14171d";
+        ctx.fillRect(0, 0, outSize, outSize);
+        ctx.save();
+        ctx.translate(outSize / 2 + offsetX * ratio, outSize / 2 + offsetY * ratio);
+        ctx.scale(s * ratio, s * ratio);
+        ctx.drawImage(img, -img.width / 2, -img.height / 2);
+        ctx.restore();
+        prefs.avatar = canvas.toDataURL("image/jpeg", 0.85);
+        savePrefs();
+        renderProfileCard();
+        closeSheet();
+        toast("프로필 사진을 등록했어요.");
+        syncProfileAvatarToPosts(prefs.avatar).catch(function () {});
+      });
+    }
 
     profilePhotoInputEl.addEventListener("change", function () {
       var file = profilePhotoInputEl.files && profilePhotoInputEl.files[0];
@@ -1854,20 +1967,7 @@
       reader.onload = function (ev) {
         var img = new Image();
         img.onload = function () {
-          var size = 240;
-          var canvas = document.createElement("canvas");
-          canvas.width = size;
-          canvas.height = size;
-          var ctx = canvas.getContext("2d");
-          var minSide = Math.min(img.width, img.height);
-          var sx = (img.width - minSide) / 2;
-          var sy = (img.height - minSide) / 2;
-          ctx.drawImage(img, sx, sy, minSide, minSide, 0, 0, size, size);
-          prefs.avatar = canvas.toDataURL("image/jpeg", 0.82);
-          savePrefs();
-          renderProfileCard();
-          toast("프로필 사진을 등록했어요.");
-          syncProfileAvatarToPosts(prefs.avatar).catch(function () {});
+          openPhotoCropSheet(img);
         };
         img.src = ev.target.result;
       };
@@ -1890,6 +1990,7 @@
       prefs.bio = bio;
       savePrefs();
       postNicknameEl.value = nick;
+      profileExpanded = false;
       renderProfileCard();
       toast("프로필을 저장했어요.");
       syncProfileAvatarToPosts(prefs.avatar || "").catch(function () {});
