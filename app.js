@@ -198,12 +198,12 @@
 
   // ---------- 상태 ----------
   var DISCIPLINES = [
-    { code: "STA", name: "스태틱", unit: "time", bench: 300, hex: true, depth: false },
-    { code: "DYN", name: "다이나믹", unit: "m", bench: 150, hex: true, depth: false },
-    { code: "DNF", name: "노핀 (풀)", unit: "m", bench: 100, hex: true, depth: false },
-    { code: "CWT", name: "콘스탄트", unit: "m", bench: 60, hex: true, depth: true },
-    { code: "CNF", name: "노핀 (수심)", unit: "m", bench: 45, hex: true, depth: true },
-    { code: "FIM", name: "프리이머전", unit: "m", bench: 60, hex: true, depth: true }
+    { code: "STA", name: "Static Apnea", unit: "time", bench: 300, hex: true, depth: false },
+    { code: "DYN", name: "Dynamic with Fins", unit: "m", bench: 150, hex: true, depth: false },
+    { code: "DNF", name: "Dynamic No Fins", unit: "m", bench: 100, hex: true, depth: false },
+    { code: "CWT", name: "Constant Weight", unit: "m", bench: 60, hex: true, depth: true },
+    { code: "CNF", name: "Constant No Fins", unit: "m", bench: 45, hex: true, depth: true },
+    { code: "FIM", name: "Free Immersion", unit: "m", bench: 60, hex: true, depth: true }
   ];
 
   var HEX_DISCIPLINES = DISCIPLINES.filter(function (d) { return d.hex; });
