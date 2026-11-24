@@ -747,6 +747,8 @@
   var timerNextEl = $("#timerNext");
   var timerModeEl = $("#timerMode");
   var ringEl = $("#ringProgress");
+  var ringKnobEl = $("#ringKnob");
+  var ringWrapEl = $("#timerRingWrap");
   var timerToggleEl = $("#timerToggle");
   var timerNoteEl = $("#timerNote");
   var timerMuteEl = $("#timerMute");
@@ -1021,7 +1023,13 @@
     }
     var ph = timer.phases[timer.idx];
     var frac = ph ? clamp(rem / ph.sec, 0, 1) : 0;
-    ringEl.style.strokeDashoffset = String(RING_C * (1 - frac));
+    var elapsedFrac = 1 - frac;
+    ringEl.style.strokeDashoffset = String(RING_C * frac);
+    if (ringKnobEl) {
+      var theta = 2 * Math.PI * elapsedFrac;
+      ringKnobEl.setAttribute("cx", (160 + RING_R * Math.cos(theta)).toFixed(2));
+      ringKnobEl.setAttribute("cy", (160 + RING_R * Math.sin(theta)).toFixed(2));
+    }
   }
 
   function updateTimerUI(force) {
@@ -1114,6 +1122,10 @@
     timerTimeEl.textContent = fmt(first.sec);
     timer.lastShown = Math.ceil(first.sec);
     ringEl.style.strokeDashoffset = "0";
+    if (ringKnobEl) {
+      ringKnobEl.setAttribute("cx", String(160 + RING_R));
+      ringKnobEl.setAttribute("cy", "160");
+    }
     timerRoundEl.textContent = first.round + " / " + timer.totalRounds;
     timerNextEl.textContent = timer.phases[1] ? "다음 · " + (timer.phases[1].kind === "hold" ? "숨참기 " : "휴식 ") + fmt(timer.phases[1].sec) : "마지막 라운드";
     setToggleIcon(false);
@@ -1785,6 +1797,46 @@
       else resumeTimer();
     });
     $("#timerReset").addEventListener("click", resetTimer);
+
+    if (ringWrapEl) {
+      var ringDragging = false;
+      function scrubRingFromPointer(e) {
+        if (timer.finished) return;
+        var ph = timer.phases[timer.idx];
+        if (!ph || !ph.sec) return;
+        var rect = ringWrapEl.getBoundingClientRect();
+        var dx = e.clientX - (rect.left + rect.width / 2);
+        var dy = e.clientY - (rect.top + rect.height / 2);
+        var dist = Math.hypot(dx, dy);
+        if (!ringDragging && dist < rect.width * 0.18) return;
+        var angle = Math.atan2(dx, -dy);
+        if (angle < 0) angle += 2 * Math.PI;
+        var elapsedFrac = clamp(angle / (2 * Math.PI), 0, 0.995);
+        var newRem = Math.max(0.5, ph.sec * (1 - elapsedFrac));
+        timer.remaining = newRem;
+        timer.phaseEnd = Date.now() + newRem * 1000;
+        timer.lastBeep = -1;
+        timer.lastSpoken = -1;
+        timer.lastShown = -1;
+        updateTimerUI(true);
+      }
+      ringWrapEl.addEventListener("pointerdown", function (e) {
+        if (timer.finished) return;
+        var rect = ringWrapEl.getBoundingClientRect();
+        var dist = Math.hypot(e.clientX - (rect.left + rect.width / 2), e.clientY - (rect.top + rect.height / 2));
+        if (dist < rect.width * 0.18) return;
+        ringDragging = true;
+        if (ringWrapEl.setPointerCapture) ringWrapEl.setPointerCapture(e.pointerId);
+        scrubRingFromPointer(e);
+      });
+      ringWrapEl.addEventListener("pointermove", function (e) {
+        if (!ringDragging) return;
+        scrubRingFromPointer(e);
+      });
+      function stopRingDrag() { ringDragging = false; }
+      ringWrapEl.addEventListener("pointerup", stopRingDrag);
+      ringWrapEl.addEventListener("pointercancel", stopRingDrag);
+    }
     $("#timerSkip").addEventListener("click", function () {
       if (timer.finished) return;
       if (!timer.running && !timer.paused) { toast("먼저 재생해 주세요."); return; }

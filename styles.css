@@ -1721,6 +1721,9 @@ svg {
   display: grid;
   place-items: center;
   z-index: 1;
+  touch-action: none;
+  cursor: pointer;
+  user-select: none;
 }
 
 .ring {
@@ -1752,7 +1755,21 @@ svg {
   filter: drop-shadow(0 0 14px rgba(255, 179, 122, 0.45));
 }
 
-.timer-screen.is-paused .ring-progress { opacity: 0.45; }
+.ring-knob {
+  fill: #ffffff;
+  stroke: #4fd6dd;
+  stroke-width: 3.5;
+  filter: drop-shadow(0 0 8px rgba(79, 214, 221, 0.75));
+  transition: stroke 0.5s var(--ease);
+}
+
+.timer-screen.is-hold .ring-knob {
+  stroke: #ffb37a;
+  filter: drop-shadow(0 0 8px rgba(255, 179, 122, 0.75));
+}
+
+.timer-screen.is-paused .ring-progress,
+.timer-screen.is-paused .ring-knob { opacity: 0.45; }
 
 .timer-center {
   display: flex;
@@ -1761,6 +1778,7 @@ svg {
   gap: 8px;
   position: relative;
   z-index: 1;
+  pointer-events: none;
 }
 
 .phase-badge {
