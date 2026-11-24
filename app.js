@@ -1193,12 +1193,14 @@
       var dt = new Date(y, m, dayNum);
       var key = dateKey(dt);
       var dow = dt.getDay();
+      var isToday = key === todayKey();
       var cls = "cal-cell";
       if (dow === 0 || dow === 6) cls += " is-sun-sat";
-      if (key === todayKey()) cls += " is-today";
+      if (isToday) cls += " is-today";
       if (key === state.selected) cls += " is-selected";
       if (counts[key]) cls += " has-events";
-      var label = (m + 1) + "월 " + dayNum + "일 " + WEEK[dow] + "요일" + (counts[key] ? ", 수업 " + counts[key] + "개" : "");
+      var label = (m + 1) + "월 " + dayNum + "일 " + WEEK[dow] + "요일" + (isToday ? " 오늘" : "") + (counts[key] ? ", 수업 " + counts[key] + "개" : "");
+      var todayTag = isToday ? '<span class="cal-today-tag">오늘</span>' : "";
       var dots = "";
       if (levelsByDate[key]) {
         dots = '<span class="cal-dots">' + levelsByDate[key].slice(0, 3).map(function (lv) {
@@ -1206,7 +1208,7 @@
         }).join("") + '</span>';
       }
       html += '<button type="button" class="' + cls + '" data-key="' + key + '" '
-        + 'aria-pressed="' + (key === state.selected) + '" aria-label="' + label + '">' + dayNum + dots + '</button>';
+        + 'aria-pressed="' + (key === state.selected) + '" aria-label="' + label + '">' + dayNum + todayTag + dots + '</button>';
     }
     calGridEl.innerHTML = html;
   }

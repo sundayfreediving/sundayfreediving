@@ -886,7 +886,34 @@ svg {
 .cal-cell.is-today {
   color: var(--teal);
   font-weight: 800;
+  padding-bottom: 11px;
   box-shadow: inset 0 0 0 1.5px var(--teal);
+}
+
+.cal-today-tag {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 4px;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  text-align: center;
+  letter-spacing: -0.02em;
+  color: var(--teal);
+  pointer-events: none;
+}
+
+.cal-cell.is-today.has-events {
+  padding-bottom: 14px;
+}
+
+.cal-cell.is-today.has-events .cal-today-tag {
+  bottom: 10px;
+}
+
+.cal-cell.is-selected .cal-today-tag {
+  color: #14171d;
 }
 
 .cal-cell.has-events {
