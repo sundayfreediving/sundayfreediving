@@ -8,8 +8,8 @@
       SUPABASE_ANON_KEY : eyJhbGciOi... (anon public 키)
    ========================================================= */
 window.SFD_CONFIG = {
-  SUPABASE_URL: "",
-  SUPABASE_ANON_KEY: "",
+  SUPABASE_URL: "https://zkasgmwpxvselxksdkez.supabase.co",
+  SUPABASE_ANON_KEY: "sb_publishable_s0T_Sx7NuSxHLCxy8Jo4gw_JfboGij7",
 
   // 관리자(김병선 대표) 계정 — 이 이메일만 수업일정을 수정할 수 있습니다.
   ADMIN_EMAIL: "sundayfreediving@gmail.com",
@@ -17,5 +17,5 @@ window.SFD_CONFIG = {
   // 로컬 체험 모드에서만 쓰이는 관리자 PIN (클라우드 모드에서는 사용 안 함)
   LOCAL_ADMIN_PIN: "0619",
 
-  APP_VERSION: "1.0.0"
+  APP_VERSION: "1.1.0"
 };
