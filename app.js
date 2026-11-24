@@ -176,6 +176,7 @@
       prefs.tableType = saved.tableType === "o2" ? "o2" : "co2";
       prefs.muted = !!saved.muted;
       prefs.nickname = typeof saved.nickname === "string" ? saved.nickname : "";
+      if (prefs.nickname === "관리자") prefs.nickname = "";
       prefs.bio = typeof saved.bio === "string" ? saved.bio : "";
       prefs.avatar = typeof saved.avatar === "string" ? saved.avatar : "";
       ["co2", "o2"].forEach(function (k) {
@@ -1942,8 +1943,7 @@
         profileAvatarPreviewEl.innerHTML = '<img src="' + esc(prefs.avatar) + '" alt="내 프로필 사진">';
         profilePhotoClearBtn.hidden = false;
       } else {
-        var initial = (prefs.nickname || "").trim().slice(0, 1);
-        profileAvatarPreviewEl.textContent = initial || "+";
+        profileAvatarPreviewEl.textContent = "+";
         profilePhotoClearBtn.hidden = true;
       }
       if (profileCardEl) profileCardEl.hidden = !profileExpanded;
