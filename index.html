@@ -237,7 +237,12 @@
     <section class="view" id="view-schedule" data-view="schedule" aria-label="수업일정">
       <div class="view-head">
         <p class="eyebrow">CLASS SCHEDULE</p>
-        <h1 class="view-title">수업일정</h1>
+        <div class="view-title-row">
+          <h1 class="view-title">수업일정</h1>
+          <button class="fab-inline" id="addScheduleBtn" type="button" aria-label="수업 추가" hidden>
+            <svg><use href="#i-plus"/></svg>
+          </button>
+        </div>
         <p class="view-desc">K26 · 잠실 · 딥스테이션, 이번 달 일정을 한눈에.</p>
       </div>
 
@@ -262,13 +267,6 @@
       </div>
       <div class="day-list" id="dayList"></div>
       <p class="empty" id="dayEmpty" hidden>이 날은 예정된 수업이 없어요.</p>
-
-      <div class="schedule-foot">
-        <span class="schedule-sync-note">네이버 [공유] 교육일정 연동</span>
-        <button class="fab-inline" id="addScheduleBtn" type="button" aria-label="수업 추가" hidden>
-          <svg><use href="#i-plus"/></svg>
-        </button>
-      </div>
     </section>
 
     <!-- ================= 버디 ================= -->

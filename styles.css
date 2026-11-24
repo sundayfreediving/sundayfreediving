@@ -1028,19 +1028,11 @@ svg {
   white-space: pre-wrap;
 }
 
-.schedule-foot {
+.view-title-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-top: 14px;
-  padding: 4px 2px;
-  min-height: 36px;
-}
-
-.schedule-sync-note {
-  font-size: 12px;
-  color: var(--ink-3);
 }
 
 .fab-inline {
