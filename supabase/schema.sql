@@ -159,6 +159,7 @@ create table if not exists public.buddy_posts (
 );
 
 alter table public.buddy_posts add column if not exists author_token text;
+alter table public.buddy_posts add column if not exists avatar_url text;
 alter table public.buddy_posts drop constraint if exists buddy_posts_tag_pool_check;
 alter table public.buddy_posts add constraint buddy_posts_tag_pool_check
   check (tag_pool is null or char_length(btrim(tag_pool)) between 1 and 30);
@@ -211,6 +212,31 @@ begin
 end;
 $$;
 
+create or replace function public.admin_update_buddy_post(
+  p_pin      text,
+  p_id       uuid,
+  p_content  text,
+  p_tag_date date,
+  p_tag_pool text
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not public.verify_admin_pin(p_pin) then
+    raise exception '관리자만 수정할 수 있습니다.';
+  end if;
+
+  update public.buddy_posts
+     set content  = p_content,
+         tag_date = p_tag_date,
+         tag_pool = p_tag_pool
+   where id = p_id;
+end;
+$$;
+
 create or replace function public.admin_delete_buddy_post(p_pin text, p_id uuid)
 returns void
 language plpgsql
@@ -226,6 +252,7 @@ end;
 $$;
 
 grant execute on function public.update_buddy_post(uuid, text, text, date, text) to anon, authenticated;
+grant execute on function public.admin_update_buddy_post(text, uuid, text, date, text) to anon, authenticated;
 grant execute on function public.admin_delete_buddy_post(text, uuid) to anon, authenticated;
 
 -- ---------------------------------------------------------------------------

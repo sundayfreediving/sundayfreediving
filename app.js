@@ -151,6 +151,8 @@
     tableType: "co2",
     muted: false,
     nickname: "",
+    bio: "",
+    avatar: "",
     co2: { rounds: 8, holdPct: 50, restStart: 120, stepSec: 15, customRows: null },
     o2: { rounds: 8, holdPct: 50, restStart: 120, stepSec: 15, customRows: null }
   };
@@ -291,6 +293,7 @@
       tag_date: row.tag_date ? String(row.tag_date).slice(0, 10) : "",
       tag_pool: row.tag_pool || "",
       author_token: row.author_token || "",
+      avatar_url: row.avatar_url || "",
       created_at: row.created_at || new Date().toISOString()
     };
   }
@@ -443,21 +446,33 @@
 
   async function updatePostRecord(id, payload) {
     var tok = getClientToken();
+    var target = state.posts.filter(function (p) { return p.id === id; })[0];
+    var isMine = !!(target && target.author_token && target.author_token === tok);
+    if (!isMine && !state.isAdmin) {
+      throw new Error("본인이 작성한 글만 수정할 수 있어요.");
+    }
     if (useCloud()) {
-      var res = await sb.rpc("update_buddy_post", {
-        p_id: id,
-        p_token: tok,
-        p_content: payload.content,
-        p_tag_date: payload.tag_date || null,
-        p_tag_pool: payload.tag_pool || null
-      });
+      var res;
+      if (isMine) {
+        res = await sb.rpc("update_buddy_post", {
+          p_id: id,
+          p_token: tok,
+          p_content: payload.content,
+          p_tag_date: payload.tag_date || null,
+          p_tag_pool: payload.tag_pool || null
+        });
+      } else {
+        res = await sb.rpc("admin_update_buddy_post", {
+          p_pin: state.adminPin,
+          p_id: id,
+          p_content: payload.content,
+          p_tag_date: payload.tag_date || null,
+          p_tag_pool: payload.tag_pool || null
+        });
+      }
       if (res.error) throw res.error;
       await refreshPosts();
       return;
-    }
-    var target = state.posts.filter(function (p) { return p.id === id; })[0];
-    if (!target || target.author_token !== tok) {
-      throw new Error("본인이 작성한 글만 수정할 수 있어요.");
     }
     target.content = payload.content;
     target.tag_date = payload.tag_date || "";
@@ -1315,18 +1330,20 @@
       var actionBtns = "";
       if (isMine || state.isAdmin) {
         actionBtns = '<div class="post-actions">'
-          + (isMine
-            ? '<button type="button" class="post-edit" data-act="edit-post" data-id="' + esc(p.id) + '" aria-label="내 글 수정"><svg><use href="#i-edit"/></svg></button>'
-            : "")
+          + '<button type="button" class="post-edit" data-act="edit-post" data-id="' + esc(p.id) + '" aria-label="글 수정">수정</button>'
           + (state.isAdmin
             ? '<button type="button" class="post-del" data-act="del-post" data-id="' + esc(p.id) + '" aria-label="글 삭제"><svg><use href="#i-trash"/></svg></button>'
             : "")
           + '</div>';
       }
 
+      var avatarHtml = p.avatar_url
+        ? '<button type="button" class="avatar avatar-photo" data-act="view-avatar" data-id="' + esc(p.id) + '" aria-label="프로필 사진 크게 보기"><img src="' + esc(p.avatar_url) + '" alt=""></button>'
+        : '<span class="avatar' + avatarClass(nick) + '">' + esc(nick.slice(0, 1)) + '</span>';
+
       return '<article class="post" data-post="' + esc(p.id) + '">'
         + '<div class="post-top">'
-        + '<span class="avatar' + avatarClass(nick) + '">' + esc(nick.slice(0, 1)) + '</span>'
+        + avatarHtml
         + '<div class="post-who">'
         + '<p class="post-name">' + esc(nick) + '</p>'
         + '<p class="post-time">' + esc(timeAgo(p.created_at)) + '</p>'
@@ -1346,7 +1363,8 @@
   }
 
   function openPostEditSheet(post) {
-    if (!post || post.author_token !== getClientToken()) {
+    var isMine = !!(post && post.author_token && post.author_token === getClientToken());
+    if (!post || (!isMine && !state.isAdmin)) {
       toast("본인이 작성한 글만 수정할 수 있어요.");
       return;
     }
@@ -1354,7 +1372,7 @@
     var isCustomPool = !!(post.tag_pool && presetPools.indexOf(post.tag_pool) < 0);
     var poolSel = isCustomPool ? "기타" : (post.tag_pool || "");
 
-    openSheet("내 글 수정",
+    openSheet(isMine ? "내 글 수정" : "글 수정 (관리자)",
       '<div class="form-row"><label for="editPostContent">내용</label>'
       + '<textarea id="editPostContent" maxlength="120">' + esc(post.content) + '</textarea></div>'
       + '<div class="form-grid">'
@@ -1767,6 +1785,84 @@
       if (cardItem) openScheduleForm(cardItem);
     });
 
+    // 프로필 만들기
+    var profileNickEl = $("#profileNickname");
+    var profileBioEl = $("#profileBio");
+    var profileAvatarPreviewEl = $("#profileAvatarPreview");
+    var profilePhotoInputEl = $("#profilePhotoInput");
+    var profilePhotoClearBtn = $("#profilePhotoClearBtn");
+    var profileBodyEl = $("#profileBody");
+    var profileToggleBtn = $("#profileToggleBtn");
+
+    function renderProfileCard() {
+      if (!profileNickEl) return;
+      profileNickEl.value = prefs.nickname || "";
+      profileBioEl.value = prefs.bio || "";
+      if (prefs.avatar) {
+        profileAvatarPreviewEl.innerHTML = '<img src="' + esc(prefs.avatar) + '" alt="내 프로필 사진">';
+        profilePhotoClearBtn.hidden = false;
+      } else {
+        var initial = (prefs.nickname || "선").trim().slice(0, 1) || "선";
+        profileAvatarPreviewEl.textContent = initial;
+        profilePhotoClearBtn.hidden = true;
+      }
+      if (!postNicknameEl.value.trim() && prefs.nickname) {
+        postNicknameEl.value = prefs.nickname;
+      }
+    }
+    renderProfileCard();
+
+    profileToggleBtn.addEventListener("click", function () {
+      var hidden = !profileBodyEl.hidden;
+      profileBodyEl.hidden = hidden;
+      profileToggleBtn.textContent = hidden ? "열기" : "접기";
+    });
+
+    profilePhotoInputEl.addEventListener("change", function () {
+      var file = profilePhotoInputEl.files && profilePhotoInputEl.files[0];
+      if (!file) return;
+      var reader = new FileReader();
+      reader.onload = function (ev) {
+        var img = new Image();
+        img.onload = function () {
+          var size = 240;
+          var canvas = document.createElement("canvas");
+          canvas.width = size;
+          canvas.height = size;
+          var ctx = canvas.getContext("2d");
+          var minSide = Math.min(img.width, img.height);
+          var sx = (img.width - minSide) / 2;
+          var sy = (img.height - minSide) / 2;
+          ctx.drawImage(img, sx, sy, minSide, minSide, 0, 0, size, size);
+          prefs.avatar = canvas.toDataURL("image/jpeg", 0.82);
+          savePrefs();
+          renderProfileCard();
+          toast("프로필 사진을 등록했어요.");
+        };
+        img.src = ev.target.result;
+      };
+      reader.readAsDataURL(file);
+      profilePhotoInputEl.value = "";
+    });
+
+    profilePhotoClearBtn.addEventListener("click", function () {
+      prefs.avatar = "";
+      savePrefs();
+      renderProfileCard();
+      toast("프로필 사진을 지웠어요.");
+    });
+
+    $("#profileSaveBtn").addEventListener("click", function () {
+      var nick = profileNickEl.value.trim();
+      var bio = profileBioEl.value.trim();
+      prefs.nickname = nick;
+      prefs.bio = bio;
+      savePrefs();
+      postNicknameEl.value = nick;
+      renderProfileCard();
+      toast("프로필을 저장했어요.");
+    });
+
     // 버디 작성
     postNicknameEl.value = prefs.nickname || "";
     postPoolEl.addEventListener("change", function () {
@@ -1801,15 +1897,16 @@
           return;
         }
       }
-      var nick = postNicknameEl.value.trim() || "익명";
-      prefs.nickname = nick;
+      var nick = postNicknameEl.value.trim() || prefs.nickname || "익명";
+      prefs.nickname = nick === "익명" ? prefs.nickname : nick;
       savePrefs();
 
       var payload = {
         nickname: nick,
         content: content,
         tag_date: postDateEl.value || null,
-        tag_pool: poolVal || null
+        tag_pool: poolVal || null,
+        avatar_url: prefs.avatar || null
       };
 
       var btn = postFormEl.querySelector("button[type=submit]");
@@ -1842,6 +1939,16 @@
       if (act === "toggle") {
         state.openComments[id] = !state.openComments[id];
         renderPosts();
+        return;
+      }
+
+      if (act === "view-avatar") {
+        var post = state.posts.filter(function (p) { return p.id === id; })[0];
+        if (post && post.avatar_url) {
+          $("#lightboxImg").src = post.avatar_url;
+          $("#lightboxName").textContent = post.nickname || "익명";
+          $("#photoLightbox").hidden = false;
+        }
         return;
       }
 
@@ -1897,6 +2004,12 @@
         toast("새로 불러왔어요.");
       } catch (err) {
         toast("불러오지 못했어요: " + (err.message || "오류"));
+      }
+    });
+
+    $("#photoLightbox").addEventListener("click", function (e) {
+      if (e.target.id === "photoLightbox" || e.target.closest("#lightboxClose")) {
+        $("#photoLightbox").hidden = true;
       }
     });
 
