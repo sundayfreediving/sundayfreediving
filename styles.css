@@ -1061,27 +1061,27 @@ svg {
 .fab-inline svg { width: 18px; height: 18px; }
 
 .profile-fab {
-  width: 38px;
-  height: 38px;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
-  overflow: hidden;
-  padding: 0;
+  white-space: nowrap;
   background: linear-gradient(150deg, #14171d, #272d38);
   color: #f6b81d;
   font-weight: 700;
-  font-size: 14px;
-  border: 2px solid rgba(246, 184, 29, 0.72);
-  box-shadow: 0 6px 14px rgba(20, 23, 29, 0.2);
+  font-size: 12.5px;
+  letter-spacing: -0.01em;
+  border: 1.5px solid rgba(246, 184, 29, 0.72);
+  box-shadow: 0 4px 12px rgba(20, 23, 29, 0.16);
 }
 
-.profile-fab img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
+.profile-fab.is-open {
+  background: #f6b81d;
+  color: #14171d;
+  border-color: #f6b81d;
 }
 
 .profile-card[hidden] { display: none; }

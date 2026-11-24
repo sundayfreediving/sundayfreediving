@@ -176,6 +176,8 @@
       prefs.tableType = saved.tableType === "o2" ? "o2" : "co2";
       prefs.muted = !!saved.muted;
       prefs.nickname = typeof saved.nickname === "string" ? saved.nickname : "";
+      prefs.bio = typeof saved.bio === "string" ? saved.bio : "";
+      prefs.avatar = typeof saved.avatar === "string" ? saved.avatar : "";
       ["co2", "o2"].forEach(function (k) {
         if (saved[k] && typeof saved[k] === "object") {
           var custom = sanitizeCustomRows(saved[k].customRows);
@@ -1930,28 +1932,28 @@
     var profilePhotoClearBtn = $("#profilePhotoClearBtn");
     var profileBodyEl = $("#profileBody");
     var profileToggleBtn = $("#profileToggleBtn");
-    var profileExpanded = !(prefs.nickname || prefs.avatar || prefs.bio);
+    var profileExpanded = false;
 
     function renderProfileCard() {
       if (!profileNickEl) return;
       profileNickEl.value = prefs.nickname || "";
       profileBioEl.value = prefs.bio || "";
-      var initial = (prefs.nickname || "선").trim().slice(0, 1) || "선";
       if (prefs.avatar) {
         profileAvatarPreviewEl.innerHTML = '<img src="' + esc(prefs.avatar) + '" alt="내 프로필 사진">';
-        if (profileFabBtn) profileFabBtn.innerHTML = '<img src="' + esc(prefs.avatar) + '" alt="내 프로필">';
         profilePhotoClearBtn.hidden = false;
       } else {
-        profileAvatarPreviewEl.textContent = initial;
-        if (profileFabBtn) profileFabBtn.textContent = initial;
+        var initial = (prefs.nickname || "").trim().slice(0, 1);
+        profileAvatarPreviewEl.textContent = initial || "+";
         profilePhotoClearBtn.hidden = true;
       }
       if (profileCardEl) profileCardEl.hidden = !profileExpanded;
       if (profileBodyEl) profileBodyEl.hidden = false;
       if (profileToggleBtn) profileToggleBtn.textContent = "접기";
       if (profileFabBtn) {
+        profileFabBtn.textContent = "프로필 만들기";
+        profileFabBtn.classList.toggle("is-open", profileExpanded);
         profileFabBtn.setAttribute("aria-expanded", profileExpanded ? "true" : "false");
-        profileFabBtn.title = profileExpanded ? "프로필 줄이기" : "내 프로필 열기";
+        profileFabBtn.title = profileExpanded ? "프로필 닫기" : "프로필 만들기";
       }
       if (!postNicknameEl.value.trim() && prefs.nickname) {
         postNicknameEl.value = prefs.nickname;
