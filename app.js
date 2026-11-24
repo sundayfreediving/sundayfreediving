@@ -1924,13 +1924,21 @@
     });
 
     // 홈 · 로그북
-    var pbToggleBtn = $("#pbInputToggleBtn");
-    var pbInputBody = $("#pbInputBody");
-    if (pbToggleBtn && pbInputBody) {
-      pbToggleBtn.addEventListener("click", function () {
-        state.pbInputOpen = !state.pbInputOpen;
-        pbInputBody.hidden = !state.pbInputOpen;
-        pbToggleBtn.textContent = state.pbInputOpen ? "줄이기" : "입력하기";
+    var homeSeg = $("#homeSeg");
+    var homePaneLogbook = $("#homePaneLogbook");
+    var homePaneRecords = $("#homePaneRecords");
+    if (homeSeg && homePaneLogbook && homePaneRecords) {
+      homeSeg.addEventListener("click", function (ev) {
+        var btn = ev.target.closest("[data-home-pane]");
+        if (!btn) return;
+        var pane = btn.getAttribute("data-home-pane");
+        $$("[data-home-pane]", homeSeg).forEach(function (b) {
+          var on = b === btn;
+          b.classList.toggle("is-active", on);
+          b.setAttribute("aria-selected", on ? "true" : "false");
+        });
+        homePaneLogbook.hidden = (pane !== "logbook");
+        homePaneRecords.hidden = (pane !== "records");
       });
     }
 

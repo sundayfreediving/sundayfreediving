@@ -1,6 +1,6 @@
 /* 선데이프리다이빙 PWA — Service Worker
    앱 셸을 캐시해 아이폰 홈 화면 앱처럼 오프라인에서도 열리게 합니다. */
-const VERSION = "1.2.9";
+const VERSION = "1.3.0";
 const CACHE_NAME = "sunday-freediving-" + VERSION;
 
 const APP_SHELL = [
