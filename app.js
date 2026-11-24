@@ -841,7 +841,7 @@
       window.speechSynthesis.cancel();
       var u = new SpeechSynthesisUtterance(text);
       u.lang = "en-US";
-      u.rate = rate || 1.05;
+      u.rate = rate || 0.96;
       u.pitch = 1.0;
       u.volume = 1.0;
       window.speechSynthesis.speak(u);
@@ -978,8 +978,8 @@
     timerHintEl.textContent = next.kind === "hold" ? "편하게, 힘 빼고 버티세요" : "천천히 숨을 고르세요";
     cue(next.kind === "hold" ? "hold" : "rest");
     if (!skipped) {
-      if (next.kind === "hold") speak("Official top");
-      else if (ph && ph.kind === "hold") speak("Breath");
+      if (next.kind === "hold") speak("Official top", 0.96);
+      else if (ph && ph.kind === "hold") speak("Breath", 0.96);
     }
     updateTimerUI(true);
 
@@ -988,30 +988,27 @@
 
   function checkBeep(rem) {
     var sec = Math.ceil(rem);
-    if (sec <= 3 && sec > 0 && sec !== timer.lastBeep) {
-      timer.lastBeep = sec;
-      cue("tick");
-    }
     if (sec <= 0 || sec === timer.lastSpoken) return;
     var ph = timer.phases[timer.idx];
     if (!ph) return;
     var line = "";
     if (ph.kind === "breathe") {
-      if (sec === 120) line = "Two minutes";
+      if (sec === 120) line = "Two minutes to official top";
+      else if (sec === 90) line = "One minute thirty";
       else if (sec === 60) line = "One minute";
       else if (sec === 30) line = "Thirty seconds";
       else if (sec === 20) line = "Twenty seconds";
       else if (sec === 10) line = "Ten seconds";
-      else if (sec >= 1 && sec <= 9) line = String(sec);
+      else if (sec >= 1 && sec <= 5) line = String(sec);
     } else if (ph.kind === "hold") {
       if (sec === 30) line = "Thirty seconds";
       else if (sec === 20) line = "Twenty seconds";
       else if (sec === 10) line = "Ten seconds";
-      else if (sec >= 1 && sec <= 9) line = String(sec);
+      else if (sec >= 1 && sec <= 5) line = String(sec);
     }
     if (line) {
       timer.lastSpoken = sec;
-      speak(line, sec <= 9 ? 1.12 : 1.02);
+      speak(line, sec <= 5 ? 1.0 : 0.96);
     }
   }
 
