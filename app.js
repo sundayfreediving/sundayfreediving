@@ -499,6 +499,32 @@
     }
   }
 
+  async function syncProfileAvatarToPosts(avatarUrl) {
+    var tok = getClientToken();
+    var val = avatarUrl || "";
+    if (useCloud()) {
+      if (tok) {
+        await sb.rpc("sync_my_avatar", { p_token: tok, p_avatar_url: val });
+      }
+      if (state.isAdmin && state.adminPin) {
+        await sb.rpc("admin_sync_brand_avatar", { p_pin: state.adminPin, p_avatar_url: val });
+      }
+      await refreshPosts();
+      return;
+    }
+    var changed = false;
+    state.posts.forEach(function (p) {
+      if ((tok && p.author_token === tok) || (state.isAdmin && p.nickname === "선데이프리다이빙")) {
+        p.avatar_url = val;
+        changed = true;
+      }
+    });
+    if (changed) {
+      saveLocalPosts();
+      renderPosts();
+    }
+  }
+
   async function addCommentRecord(payload) {
     if (useCloud()) {
       var res = await sb.from("buddy_comments").insert(payload).select().single();
@@ -1444,6 +1470,9 @@
     }
     renderScheduleChrome();
     renderPosts();
+    if (on && prefs.avatar) {
+      syncProfileAvatarToPosts(prefs.avatar).catch(function () {});
+    }
   }
 
   function adminSheetHtml() {
@@ -1838,6 +1867,7 @@
           savePrefs();
           renderProfileCard();
           toast("프로필 사진을 등록했어요.");
+          syncProfileAvatarToPosts(prefs.avatar).catch(function () {});
         };
         img.src = ev.target.result;
       };
@@ -1850,6 +1880,7 @@
       savePrefs();
       renderProfileCard();
       toast("프로필 사진을 지웠어요.");
+      syncProfileAvatarToPosts("").catch(function () {});
     });
 
     $("#profileSaveBtn").addEventListener("click", function () {
@@ -1861,6 +1892,7 @@
       postNicknameEl.value = nick;
       renderProfileCard();
       toast("프로필을 저장했어요.");
+      syncProfileAvatarToPosts(prefs.avatar || "").catch(function () {});
     });
 
     // 버디 작성
@@ -2080,6 +2112,9 @@
         if (!pinCheck.error && pinCheck.data === true) {
           state.isAdmin = true;
           state.adminPin = savedPin;
+          if (prefs.avatar) {
+            await sb.rpc("admin_sync_brand_avatar", { p_pin: savedPin, p_avatar_url: prefs.avatar }).catch(function () {});
+          }
         }
       }
       await Promise.all([refreshSchedules(), refreshPosts()]);

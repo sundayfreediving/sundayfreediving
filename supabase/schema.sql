@@ -255,6 +255,70 @@ grant execute on function public.update_buddy_post(uuid, text, text, date, text)
 grant execute on function public.admin_update_buddy_post(text, uuid, text, date, text) to anon, authenticated;
 grant execute on function public.admin_delete_buddy_post(text, uuid) to anon, authenticated;
 
+create or replace function public.sync_my_avatar(p_token text, p_avatar_url text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if p_token is null or char_length(btrim(p_token)) = 0 then
+    return;
+  end if;
+  update public.buddy_posts
+     set avatar_url = nullif(p_avatar_url, '')
+   where author_token = p_token;
+end;
+$$;
+
+create or replace function public.admin_sync_brand_avatar(p_pin text, p_avatar_url text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not public.verify_admin_pin(p_pin) then
+    raise exception '관리자만 동기화할 수 있습니다.';
+  end if;
+
+  insert into public.app_settings (key, value)
+  values ('brand_avatar', coalesce(p_avatar_url, ''))
+  on conflict (key) do update set value = excluded.value;
+
+  update public.buddy_posts
+     set avatar_url = nullif(p_avatar_url, '')
+   where nickname = '선데이프리다이빙';
+end;
+$$;
+
+create or replace function public.fill_brand_avatar_on_insert()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_avatar text;
+begin
+  if new.nickname = '선데이프리다이빙' and (new.avatar_url is null or new.avatar_url = '') then
+    select value into v_avatar from public.app_settings where key = 'brand_avatar';
+    if v_avatar is not null and v_avatar <> '' then
+      new.avatar_url := v_avatar;
+    end if;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists buddy_posts_fill_brand_avatar on public.buddy_posts;
+create trigger buddy_posts_fill_brand_avatar
+  before insert on public.buddy_posts
+  for each row execute function public.fill_brand_avatar_on_insert();
+
+grant execute on function public.sync_my_avatar(text, text) to anon, authenticated;
+grant execute on function public.admin_sync_brand_avatar(text, text) to anon, authenticated;
+
 -- ---------------------------------------------------------------------------
 -- 3. 버디 댓글 (누구나 읽기/쓰기, 관리자만 삭제)
 -- ---------------------------------------------------------------------------
