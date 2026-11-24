@@ -142,13 +142,13 @@
       <div class="view-head">
         <p class="eyebrow">BREATH TRAINING</p>
         <h1 class="view-title">숨참기</h1>
-        <p class="view-desc">내 PB에 맞춘 CO2·O2 테이블로, 안전하게 한 라운드씩.</p>
+        <p class="view-desc">내 마음대로 테이블을 맞추고, 숫자를 눌러 라운드별로 바로 바꿀 수 있어요.</p>
       </div>
 
       <div class="card pb-card">
         <div class="pb-main">
           <div>
-            <p class="card-label">Personal Best</p>
+            <p class="card-label">Personal Best (선택)</p>
             <p class="pb-value" id="pbValue">2:30</p>
           </div>
           <button class="btn-ghost" id="pbEditBtn" type="button">PB 수정</button>
@@ -158,7 +158,7 @@
           <button class="btn-primary btn-small" id="pbSaveBtn" type="button">저장</button>
           <button class="btn-ghost" id="pbCancelBtn" type="button">취소</button>
         </div>
-        <p class="pb-hint" id="pbHint">2:30 또는 150처럼 입력할 수 있어요.</p>
+        <p class="pb-hint" id="pbHint">PB를 입력하지 않아도 아래 표의 숫자를 눌러 직접 조절할 수 있어요.</p>
       </div>
 
       <div class="segmented" id="tableSeg" role="tablist" aria-label="테이블 종류">
@@ -216,6 +216,10 @@
           </div>
         </div>
 
+        <div class="table-custom-bar">
+          <span class="table-custom-hint">숫자를 누르면 라운드별로 바로 바꿀 수 있어요</span>
+          <button class="link-btn" id="resetCustomTableBtn" type="button" hidden>자동 계산으로 초기화</button>
+        </div>
         <div class="table-list" id="tablePreview" aria-label="테이블 미리보기"></div>
       </div>
 
@@ -283,9 +287,10 @@
             <option value="잠실">잠실</option>
             <option value="딥스테이션">딥스테이션</option>
             <option value="보홀">보홀</option>
-            <option value="기타">기타</option>
+            <option value="기타">기타 (직접 입력)</option>
           </select>
         </div>
+        <input class="field custom-pool-field" id="postPoolCustom" type="text" maxlength="20" placeholder="장소를 직접 입력해 주세요 (예: 성남종합운동장)" aria-label="장소 직접 입력" hidden>
         <div class="composer-submit">
           <span class="composer-hint">날짜와 장소는 선택이에요</span>
           <button class="btn-primary btn-small" type="submit">올리기</button>

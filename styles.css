@@ -613,15 +613,29 @@ svg {
   letter-spacing: -0.01em;
 }
 
+.table-custom-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 4px 2px;
+}
+
+.table-custom-hint {
+  font-size: 11.5px;
+  color: var(--ink-3);
+  letter-spacing: -0.01em;
+}
+
 .table-list {
-  padding: 12px 0 6px;
+  padding: 6px 0 6px;
 }
 
 .table-row {
   display: grid;
   grid-template-columns: 34px 1fr 1fr;
   align-items: center;
-  height: 34px;
+  height: 36px;
   font-size: 13px;
   border-radius: 8px;
   padding: 0 6px;
@@ -643,20 +657,54 @@ svg {
   font-weight: 650;
 }
 
-.table-row .hold {
+.table-row .cell-btn {
+  justify-self: start;
+  padding: 3px 8px;
+  margin-left: -8px;
+  border-radius: 7px;
   font-family: var(--mono);
+  font-size: 13.5px;
+  line-height: 1.2;
+  border: 1px dashed transparent;
+  transition: background .12s, border-color .12s;
+}
+
+.table-row .cell-btn:hover,
+.table-row .cell-btn:focus-visible {
+  background: var(--teal-soft);
+  border-color: var(--teal);
+  outline: none;
+}
+
+.table-row .cell-btn.hold {
   font-weight: 600;
   color: var(--ink);
 }
 
-.table-row .rest {
-  font-family: var(--mono);
+.table-row .cell-btn.rest {
   color: var(--ink-2);
 }
 
+.table-row .cell-input {
+  width: 72px;
+  height: 28px;
+  padding: 0 7px;
+  margin-left: -8px;
+  border-radius: 7px;
+  border: 1.5px solid var(--teal);
+  background: var(--surface);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 13.5px;
+  font-weight: 600;
+  box-shadow: 0 0 0 3px var(--teal-soft);
+}
+
+.table-row .cell-input:focus { outline: none; }
+
 .table-row.alt { background: var(--surface-2); }
 
-.table-row.final .hold { color: var(--teal); }
+.table-row.final .cell-btn.hold { color: var(--teal); }
 
 /* ---------- 시작 버튼 ---------- */
 .btn-start {
@@ -1031,6 +1079,12 @@ svg {
   border-top: 1px solid var(--line);
 }
 
+.custom-pool-field {
+  width: 100%;
+  margin-top: 7px;
+  font-size: 13px;
+}
+
 .composer-submit {
   display: flex;
   align-items: center;
@@ -1126,7 +1180,14 @@ svg {
 
 .post-time { font-size: 11px; color: var(--ink-3); margin-top: 1px; }
 
-.post-del {
+.post-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+}
+
+.post-edit, .post-del {
   width: 30px;
   height: 30px;
   border-radius: 9px;
@@ -1136,7 +1197,8 @@ svg {
   flex: none;
 }
 
-.post-del svg { width: 16px; height: 16px; }
+.post-edit svg, .post-del svg { width: 16px; height: 16px; }
+.post-edit:hover { color: var(--teal); background: var(--teal-soft); }
 .post-del:hover { color: var(--danger); background: var(--danger-soft); }
 
 .post-body {

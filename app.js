@@ -136,16 +136,36 @@
     catch (e) { return false; }
   }
 
+  function getClientToken() {
+    var tok = lsGet("sfd.clientToken", "");
+    if (!tok || typeof tok !== "string") {
+      tok = "tok-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
+      lsSet("sfd.clientToken", tok);
+    }
+    return tok;
+  }
+
   // ---------- 설정 값 ----------
   var DEFAULT_PREFS = {
     pb: 150,
     tableType: "co2",
     muted: false,
     nickname: "",
-    co2: { rounds: 8, holdPct: 50, restStart: 120, stepSec: 15 },
-    o2: { rounds: 8, holdPct: 50, restStart: 120, stepSec: 15 }
+    co2: { rounds: 8, holdPct: 50, restStart: 120, stepSec: 15, customRows: null },
+    o2: { rounds: 8, holdPct: 50, restStart: 120, stepSec: 15, customRows: null }
   };
   var prefs = JSON.parse(JSON.stringify(DEFAULT_PREFS));
+
+  function sanitizeCustomRows(raw) {
+    if (!Array.isArray(raw) || !raw.length) return null;
+    var out = raw.slice(0, 20).map(function (r) {
+      return {
+        hold: clamp(parseInt(r && r.hold, 10) || 60, 5, 900),
+        rest: clamp(parseInt(r && r.rest, 10) || 60, 5, 900)
+      };
+    });
+    return out.length ? out : null;
+  }
 
   function loadPrefs() {
     var saved = lsGet("sfd.prefs", null);
@@ -156,11 +176,13 @@
       prefs.nickname = typeof saved.nickname === "string" ? saved.nickname : "";
       ["co2", "o2"].forEach(function (k) {
         if (saved[k] && typeof saved[k] === "object") {
+          var custom = sanitizeCustomRows(saved[k].customRows);
           prefs[k] = {
-            rounds: clamp(parseInt(saved[k].rounds, 10) || 8, 3, 12),
+            rounds: custom ? custom.length : clamp(parseInt(saved[k].rounds, 10) || 8, 3, 12),
             holdPct: clamp(parseInt(saved[k].holdPct, 10) || 50, 30, 90),
             restStart: clamp(parseInt(saved[k].restStart, 10) || 120, 30, 300),
-            stepSec: clamp(parseInt(saved[k].stepSec, 10) || 15, 0, 45)
+            stepSec: clamp(parseInt(saved[k].stepSec, 10) || 15, 0, 45),
+            customRows: custom
           };
         }
       });
@@ -175,6 +197,7 @@
     tableType: "co2",
     pb: 150,
     isAdmin: false,
+    adminPin: "",
     adminEmail: "",
     history: [],
     schedules: [],
@@ -267,6 +290,7 @@
       content: row.content || "",
       tag_date: row.tag_date ? String(row.tag_date).slice(0, 10) : "",
       tag_pool: row.tag_pool || "",
+      author_token: row.author_token || "",
       created_at: row.created_at || new Date().toISOString()
     };
   }
@@ -356,12 +380,18 @@
   async function saveScheduleRecord(payload, id) {
     if (useCloud()) {
       if (!sb) throw new Error("클라우드 연결이 준비되지 않았어요.");
-      var res;
-      if (id) {
-        res = await sb.from("schedules").update(payload).eq("id", id);
-      } else {
-        res = await sb.from("schedules").insert(payload);
-      }
+      var res = await sb.rpc("admin_upsert_schedule", {
+        p_pin: state.adminPin,
+        p_id: id || null,
+        p_title: payload.title,
+        p_class_date: payload.class_date,
+        p_start_time: payload.start_time,
+        p_end_time: payload.end_time || null,
+        p_location: payload.location,
+        p_level: payload.level,
+        p_capacity: payload.capacity,
+        p_notes: payload.notes || null
+      });
       if (res.error) throw res.error;
     } else {
       if (id) {
@@ -382,7 +412,10 @@
 
   async function deleteScheduleRecord(id) {
     if (useCloud()) {
-      var res = await sb.from("schedules").delete().eq("id", id);
+      var res = await sb.rpc("admin_delete_schedule", {
+        p_pin: state.adminPin,
+        p_id: id
+      });
       if (res.error) throw res.error;
       await refreshSchedules();
     } else {
@@ -394,22 +427,52 @@
   }
 
   async function addPostRecord(payload) {
+    var data = Object.assign({ author_token: getClientToken() }, payload);
     if (useCloud()) {
-      var res = await sb.from("buddy_posts").insert(payload).select().single();
+      var res = await sb.from("buddy_posts").insert(data).select().single();
       if (res.error) throw res.error;
       await refreshPosts();
       return res.data;
     }
-    var row = mapPost(Object.assign({ id: uid(), created_at: new Date().toISOString() }, payload));
+    var row = mapPost(Object.assign({ id: uid(), created_at: new Date().toISOString() }, data));
     state.posts.unshift(row);
     saveLocalPosts();
     renderPosts();
     return row;
   }
 
-  async function deletePostRecord(id) {
+  async function updatePostRecord(id, payload) {
+    var tok = getClientToken();
     if (useCloud()) {
-      var res = await sb.from("buddy_posts").delete().eq("id", id);
+      var res = await sb.rpc("update_buddy_post", {
+        p_id: id,
+        p_token: tok,
+        p_content: payload.content,
+        p_tag_date: payload.tag_date || null,
+        p_tag_pool: payload.tag_pool || null
+      });
+      if (res.error) throw res.error;
+      await refreshPosts();
+      return;
+    }
+    var target = state.posts.filter(function (p) { return p.id === id; })[0];
+    if (!target || target.author_token !== tok) {
+      throw new Error("본인이 작성한 글만 수정할 수 있어요.");
+    }
+    target.content = payload.content;
+    target.tag_date = payload.tag_date || "";
+    target.tag_pool = payload.tag_pool || "";
+    saveLocalPosts();
+    renderPosts();
+  }
+
+  async function deletePostRecord(id) {
+    if (!state.isAdmin) throw new Error("관리자만 삭제할 수 있어요.");
+    if (useCloud()) {
+      var res = await sb.rpc("admin_delete_buddy_post", {
+        p_pin: state.adminPin,
+        p_id: id
+      });
       if (res.error) throw res.error;
       await refreshPosts();
     } else {
@@ -436,8 +499,12 @@
   }
 
   async function deleteCommentRecord(id) {
+    if (!state.isAdmin) throw new Error("관리자만 삭제할 수 있어요.");
     if (useCloud()) {
-      var res = await sb.from("buddy_comments").delete().eq("id", id);
+      var res = await sb.rpc("admin_delete_buddy_comment", {
+        p_pin: state.adminPin,
+        p_id: id
+      });
       if (res.error) throw res.error;
       await refreshPosts();
     } else {
@@ -609,6 +676,11 @@
 
   function buildTable() {
     var s = currentSettings();
+    if (s.customRows && s.customRows.length) {
+      return s.customRows.map(function (r, i) {
+        return { round: i + 1, hold: r.hold, rest: r.rest };
+      });
+    }
     var hold0 = Math.max(5, Math.round(prefs.pb * s.holdPct / 100));
     var rows = [];
     for (var i = 0; i < s.rounds; i++) {
@@ -626,13 +698,18 @@
     pbInputEl.value = fmt(prefs.pb);
 
     var s = currentSettings();
-    roundsOutEl.textContent = s.rounds;
+    var isCustom = !!(s.customRows && s.customRows.length);
+    var roundCount = isCustom ? s.customRows.length : s.rounds;
+    roundsOutEl.textContent = roundCount;
     holdPctOutEl.textContent = s.holdPct + "%";
     restOutEl.textContent = fmt(s.restStart);
-    stepOutEl.textContent = state.tableType === "co2" ? (s.stepSec + "초") : (s.stepSec + "초");
+    stepOutEl.textContent = s.stepSec + "초";
     stepLabelEl.innerHTML = state.tableType === "co2"
       ? '라운드마다 휴식 <em>감소</em>'
       : '라운드마다 숨참기 <em>증가</em>';
+
+    var resetCustomBtn = $("#resetCustomTableBtn");
+    if (resetCustomBtn) resetCustomBtn.hidden = !isCustom;
 
     var table = buildTable();
     var hold0 = table[0].hold;
@@ -640,10 +717,12 @@
     var rest0 = table[0].rest;
     var restLast = table[table.length - 1].rest;
 
-    tableTitleEl.textContent = (state.tableType === "co2" ? "CO2" : "O2") + " · " + s.rounds + " 라운드";
-    tableSubEl.textContent = state.tableType === "co2"
-      ? "숨참기 " + fmt(hold0) + " 고정 · 휴식 " + fmt(rest0) + " → " + fmt(restLast)
-      : "휴식 " + fmt(rest0) + " 고정 · 숨참기 " + fmt(hold0) + " → " + fmt(holdLast);
+    tableTitleEl.textContent = (state.tableType === "co2" ? "CO2" : "O2") + " · " + roundCount + " 라운드" + (isCustom ? " (직접 설정)" : "");
+    tableSubEl.textContent = isCustom
+      ? "라운드별 시간 직접 설정됨 · 누르면 언제든 수정"
+      : (state.tableType === "co2"
+        ? "숨참기 " + fmt(hold0) + " 고정 · 휴식 " + fmt(rest0) + " → " + fmt(restLast)
+        : "휴식 " + fmt(rest0) + " 고정 · 숨참기 " + fmt(hold0) + " → " + fmt(holdLast));
 
     var total = 0;
     var rowsHtml = '<div class="table-row head"><span>#</span><span>숨참기</span><span>휴식</span></div>';
@@ -651,8 +730,8 @@
       total += r.hold + r.rest;
       rowsHtml += '<div class="table-row' + (i % 2 ? " alt" : "") + (i === table.length - 1 ? " final" : "") + '">'
         + '<span class="rnd">' + r.round + '</span>'
-        + '<span class="hold">' + fmt(r.hold) + '</span>'
-        + '<span class="rest">' + fmt(r.rest) + '</span>'
+        + '<button type="button" class="cell-btn hold" data-idx="' + i + '" data-field="hold" aria-label="' + r.round + '라운드 숨참기 시간 수정">' + fmt(r.hold) + '</button>'
+        + '<button type="button" class="cell-btn rest" data-idx="' + i + '" data-field="rest" aria-label="' + r.round + '라운드 휴식 시간 수정">' + fmt(r.rest) + '</button>'
         + '</div>';
     });
     tablePreviewEl.innerHTML = rowsHtml;
@@ -1255,6 +1334,7 @@
   var postNicknameEl = $("#postNickname");
   var postDateEl = $("#postDate");
   var postPoolEl = $("#postPool");
+  var postPoolCustomEl = $("#postPoolCustom");
 
   function avatarClass(nick) {
     var sum = 0;
@@ -1263,6 +1343,7 @@
   }
 
   function renderPosts() {
+    var myTok = getClientToken();
     var posts = state.posts.slice().sort(function (a, b) {
       return String(b.created_at).localeCompare(String(a.created_at));
     });
@@ -1273,6 +1354,7 @@
       var comments = state.comments.filter(function (c) { return c.post_id === p.id; });
       var open = !!state.openComments[p.id];
       var nick = p.nickname || "익명";
+      var isMine = !!(p.author_token && p.author_token === myTok);
       var tags = "";
       if (p.tag_date) {
         tags += '<span class="post-tag"><svg><use href="#i-calendar"/></svg>' + esc(shortDate(p.tag_date)) + '</span>';
@@ -1305,6 +1387,18 @@
           + '</div>';
       }
 
+      var actionBtns = "";
+      if (isMine || state.isAdmin) {
+        actionBtns = '<div class="post-actions">'
+          + (isMine
+            ? '<button type="button" class="post-edit" data-act="edit-post" data-id="' + esc(p.id) + '" aria-label="내 글 수정"><svg><use href="#i-edit"/></svg></button>'
+            : "")
+          + (state.isAdmin
+            ? '<button type="button" class="post-del" data-act="del-post" data-id="' + esc(p.id) + '" aria-label="글 삭제"><svg><use href="#i-trash"/></svg></button>'
+            : "")
+          + '</div>';
+      }
+
       return '<article class="post" data-post="' + esc(p.id) + '">'
         + '<div class="post-top">'
         + '<span class="avatar' + avatarClass(nick) + '">' + esc(nick.slice(0, 1)) + '</span>'
@@ -1312,9 +1406,7 @@
         + '<p class="post-name">' + esc(nick) + '</p>'
         + '<p class="post-time">' + esc(timeAgo(p.created_at)) + '</p>'
         + '</div>'
-        + (state.isAdmin
-          ? '<button type="button" class="post-del" data-act="del-post" data-id="' + esc(p.id) + '" aria-label="글 삭제"><svg><use href="#i-trash"/></svg></button>'
-          : "")
+        + actionBtns
         + '</div>'
         + '<p class="post-body">' + esc(p.content) + '</p>'
         + (tags ? '<div class="post-tags">' + tags + '</div>' : '')
@@ -1328,42 +1420,110 @@
     }).join("");
   }
 
+  function openPostEditSheet(post) {
+    if (!post || post.author_token !== getClientToken()) {
+      toast("본인이 작성한 글만 수정할 수 있어요.");
+      return;
+    }
+    var presetPools = ["", "K26", "잠실", "딥스테이션", "보홀"];
+    var isCustomPool = !!(post.tag_pool && presetPools.indexOf(post.tag_pool) < 0);
+    var poolSel = isCustomPool ? "기타" : (post.tag_pool || "");
+
+    openSheet("내 글 수정",
+      '<div class="form-row"><label for="editPostContent">내용</label>'
+      + '<textarea id="editPostContent" maxlength="120">' + esc(post.content) + '</textarea></div>'
+      + '<div class="form-grid">'
+      + '<div class="form-row"><label for="editPostDate">날짜 (선택)</label><input id="editPostDate" type="date" value="' + esc(post.tag_date || "") + '"></div>'
+      + '<div class="form-row"><label for="editPostPool">장소 (선택)</label>'
+      + '<select id="editPostPool">'
+      + '<option value=""' + (poolSel === "" ? " selected" : "") + '>장소 없음</option>'
+      + '<option value="K26"' + (poolSel === "K26" ? " selected" : "") + '>K26</option>'
+      + '<option value="잠실"' + (poolSel === "잠실" ? " selected" : "") + '>잠실</option>'
+      + '<option value="딥스테이션"' + (poolSel === "딥스테이션" ? " selected" : "") + '>딥스테이션</option>'
+      + '<option value="보홀"' + (poolSel === "보홀" ? " selected" : "") + '>보홀</option>'
+      + '<option value="기타"' + (poolSel === "기타" ? " selected" : "") + '>기타 (직접 입력)</option>'
+      + '</select></div>'
+      + '</div>'
+      + '<div class="form-row" id="editPostPoolCustomRow"' + (isCustomPool ? "" : " hidden") + '>'
+      + '<label for="editPostPoolCustom">장소 직접 입력</label>'
+      + '<input id="editPostPoolCustom" type="text" maxlength="20" placeholder="예: 성남종합운동장" value="' + esc(isCustomPool ? post.tag_pool : "") + '">'
+      + '</div>'
+      + '<div class="form-actions"><button type="button" class="btn-primary" id="editPostSave" style="flex:1">저장</button></div>'
+    );
+
+    var selEl = $("#editPostPool");
+    var customRow = $("#editPostPoolCustomRow");
+    var customInput = $("#editPostPoolCustom");
+    selEl.addEventListener("change", function () {
+      var show = selEl.value === "기타";
+      customRow.hidden = !show;
+      if (show) customInput.focus();
+    });
+
+    $("#editPostSave").addEventListener("click", async function () {
+      var content = $("#editPostContent").value.trim();
+      if (!content) { toast("내용을 입력해 주세요."); return; }
+      var poolVal = selEl.value;
+      if (poolVal === "기타") {
+        poolVal = customInput.value.trim();
+        if (!poolVal) { toast("장소를 직접 입력해 주세요."); customInput.focus(); return; }
+      }
+      var btn = $("#editPostSave");
+      btn.disabled = true;
+      try {
+        await updatePostRecord(post.id, {
+          content: content,
+          tag_date: $("#editPostDate").value || null,
+          tag_pool: poolVal || null
+        });
+        closeSheet();
+        toast("글을 수정했어요.");
+      } catch (err) {
+        console.error(err);
+        toast("수정하지 못했어요: " + (err.message || "오류"));
+        btn.disabled = false;
+      }
+    });
+  }
+
   // ---------- 관리자 ----------
-  function setAdminLocal(on) {
-    state.isAdmin = on;
+  function setAdminSession(on, pin) {
+    state.isAdmin = !!on;
+    state.adminPin = on ? String(pin || "") : "";
     state.adminEmail = on ? ADMIN_EMAIL : "";
-    lsSet("sfd.admin", on);
+    if (!useCloud()) {
+      lsSet("sfd.admin", !!on);
+    } else {
+      try {
+        if (on) sessionStorage.setItem("sfd.adminPin", state.adminPin);
+        else sessionStorage.removeItem("sfd.adminPin");
+      } catch (e) { /* ignore */ }
+    }
     renderScheduleChrome();
     renderPosts();
   }
 
   function adminSheetHtml() {
     if (state.isAdmin) {
-      var who = useCloud() ? esc(state.adminEmail || ADMIN_EMAIL) : "로컬 체험 모드";
+      var who = useCloud() ? "클라우드 관리자 모드" : "로컬 체험 모드";
       return '<div class="admin-state"><span class="dot"></span><p><strong>관리자 모드</strong><br>'
         + who + '</p></div>'
         + '<div class="admin-menu">'
         + '<button type="button" id="adminAddClass"><svg><use href="#i-plus"/></svg>수업일정 추가</button>'
         + '<button type="button" id="adminGotoClasses"><svg><use href="#i-calendar"/></svg>수업일정 보기</button>'
-        + '<button type="button" class="danger" id="adminLogout"><svg><use href="#i-lock"/></svg>관리자 로그아웃</button>'
+        + '<button type="button" class="danger" id="adminLogout"><svg><use href="#i-lock"/></svg>관리자 잠금</button>'
         + '</div>'
-        + '<p class="sheet-note">수업일정 수정은 관리자에게만 표시됩니다. 버디 글·댓글은 관리자도 삭제할 수 있어요.</p>';
+        + '<p class="sheet-note">수업일정 추가·수정·삭제와 버디 글·댓글 삭제는 관리자만 할 수 있어요.</p>';
     }
 
-    if (useCloud()) {
-      return '<p class="sheet-text">수업일정을 관리하려면 관리자 계정으로 로그인하세요.</p>'
-        + '<div class="form-row"><label for="adminEmail">이메일</label><input id="adminEmail" type="email" autocomplete="username" value="' + esc(CFG.ADMIN_EMAIL || "") + '"></div>'
-        + '<div class="form-row"><label for="adminPw">비밀번호</label><input id="adminPw" type="password" autocomplete="current-password"></div>'
-        + '<button type="button" class="btn-primary" id="adminLoginBtn" style="width:100%">로그인</button>'
-        + '<p class="sheet-note">관리자 계정(' + esc(ADMIN_EMAIL) + ')만 수업일정을 수정할 수 있어요.</p>';
-    }
+    var modeNotice = useCloud()
+      ? '수업일정 수정이나 버디 글 삭제를 하려면 <strong>관리자 번호</strong>를 입력하세요.'
+      : '<span class="preview-pill">로컬 체험 모드</span><br>Supabase 연결 전에는 이 기기에만 저장됩니다. <strong>관리자 번호</strong>를 입력하면 관리 화면을 쓸 수 있어요.';
 
-    return '<p class="sheet-text"><span class="preview-pill">로컬 체험 모드</span><br>'
-      + 'Supabase를 연결하기 전에는 일정과 버디 글이 <strong>이 기기에만</strong> 저장됩니다. '
-      + '관리자 화면을 미리 보려면 체험용 PIN을 입력하세요.</p>'
-      + '<input class="pin-input" id="adminPin" type="password" inputmode="numeric" maxlength="4" placeholder="••••" aria-label="관리자 PIN">'
+    return '<p class="sheet-text">' + modeNotice + '</p>'
+      + '<input class="pin-input" id="adminPin" type="password" inputmode="numeric" maxlength="8" placeholder="••••" aria-label="관리자 번호">'
       + '<div class="form-actions"><button type="button" class="btn-primary" id="adminPinBtn" style="flex:1">관리자 모드 켜기</button></div>'
-      + '<p class="sheet-note">체험용 PIN은 <strong>' + esc(LOCAL_PIN) + '</strong>입니다. 실제 배포 시에는 Supabase 이메일 로그인으로 바뀝니다.</p>';
+      + '<p class="sheet-note">기본 관리자 번호는 <strong>' + esc(LOCAL_PIN) + '</strong>입니다.</p>';
   }
 
   function openAdminSheet() {
@@ -1379,61 +1539,53 @@
         closeSheet();
         setTab("schedule");
       });
-      $("#adminLogout").addEventListener("click", async function () {
-        if (useCloud() && sb) {
-          try { await sb.auth.signOut(); } catch (e) { /* ignore */ }
-        } else {
-          setAdminLocal(false);
-        }
-        setAdminLocal(false);
+      $("#adminLogout").addEventListener("click", function () {
+        setAdminSession(false, "");
         closeSheet();
-        toast("관리자 모드에서 나왔어요.");
+        toast("관리자 모드를 잠갔어요.");
       });
-      return;
-    }
-
-    if (useCloud()) {
-      var loginBtn = $("#adminLoginBtn");
-      if (loginBtn) {
-        loginBtn.addEventListener("click", async function () {
-          var email = $("#adminEmail").value.trim();
-          var pw = $("#adminPw").value;
-          if (!email || !pw) { toast("이메일과 비밀번호를 입력해 주세요."); return; }
-          loginBtn.disabled = true;
-          loginBtn.textContent = "로그인 중…";
-          try {
-            if (!sb) await ensureCloud();
-            var res = await sb.auth.signInWithPassword({ email: email, password: pw });
-            if (res.error) throw res.error;
-            var user = res.data && res.data.user ? res.data.user : null;
-            if (!user || String(user.email || "").toLowerCase() !== ADMIN_EMAIL) {
-              await sb.auth.signOut();
-              throw new Error("관리자 계정이 아니에요.");
-            }
-            applySession(res.data.session);
-            closeSheet();
-            toast("관리자로 로그인했어요.");
-          } catch (err) {
-            console.error(err);
-            toast(err.message === "Invalid login credentials" ? "이메일 또는 비밀번호가 맞지 않아요." : (err.message || "로그인에 실패했어요."));
-            loginBtn.disabled = false;
-            loginBtn.textContent = "로그인";
-          }
-        });
-      }
       return;
     }
 
     var pinBtn = $("#adminPinBtn");
     var pinInput = $("#adminPin");
-    function tryPin() {
-      if (String(pinInput.value).trim() === LOCAL_PIN) {
-        setAdminLocal(true);
+    async function tryPin() {
+      var pin = String(pinInput.value || "").trim();
+      if (!pin) { toast("관리자 번호를 입력해 주세요."); return; }
+
+      if (useCloud()) {
+        pinBtn.disabled = true;
+        pinBtn.textContent = "확인 중…";
+        try {
+          if (!sb) await ensureCloud();
+          var res = await sb.rpc("verify_admin_pin", { p_pin: pin });
+          if (res.error) throw res.error;
+          if (res.data === true) {
+            setAdminSession(true, pin);
+            closeSheet();
+            toast("관리자 모드로 전환했어요.");
+          } else {
+            pinInput.value = "";
+            toast("관리자 번호가 맞지 않아요.");
+            pinBtn.disabled = false;
+            pinBtn.textContent = "관리자 모드 켜기";
+          }
+        } catch (err) {
+          console.error(err);
+          toast("확인하지 못했어요: " + (err.message || "오류"));
+          pinBtn.disabled = false;
+          pinBtn.textContent = "관리자 모드 켜기";
+        }
+        return;
+      }
+
+      if (pin === LOCAL_PIN) {
+        setAdminSession(true, pin);
         closeSheet();
-        toast("관리자 모드로 전환했어요. (로컬 체험)");
+        toast("관리자 모드로 전환했어요.");
       } else {
         pinInput.value = "";
-        toast("PIN이 맞지 않아요.");
+        toast("관리자 번호가 맞지 않아요.");
       }
     }
     if (pinBtn) pinBtn.addEventListener("click", tryPin);
@@ -1511,14 +1663,89 @@
         var key = group.getAttribute("data-stepper");
         var delta = parseInt(btn.getAttribute("data-step"), 10);
         var s = currentSettings();
-        if (key === "rounds") s.rounds = clamp(s.rounds + delta, 3, 12);
-        if (key === "holdPct") s.holdPct = clamp(s.holdPct + delta, 30, 90);
-        if (key === "restStart") s.restStart = clamp(s.restStart + delta, 30, 300);
-        if (key === "stepSec") s.stepSec = clamp(s.stepSec + delta, state.tableType === "co2" ? 0 : 5, 45);
+        if (key === "rounds") {
+          var nextRounds = clamp((s.customRows ? s.customRows.length : s.rounds) + delta, 3, 15);
+          s.rounds = nextRounds;
+          if (s.customRows && s.customRows.length) {
+            if (nextRounds < s.customRows.length) {
+              s.customRows = s.customRows.slice(0, nextRounds);
+            } else {
+              while (s.customRows.length < nextRounds) {
+                var last = s.customRows[s.customRows.length - 1];
+                s.customRows.push({ hold: last.hold, rest: last.rest });
+              }
+            }
+          }
+        } else {
+          s.customRows = null;
+          if (key === "holdPct") s.holdPct = clamp(s.holdPct + delta, 30, 90);
+          if (key === "restStart") s.restStart = clamp(s.restStart + delta, 30, 300);
+          if (key === "stepSec") s.stepSec = clamp(s.stepSec + delta, state.tableType === "co2" ? 0 : 5, 45);
+        }
         savePrefs();
         renderBreath();
       });
     });
+
+    // 테이블 숫자 직접 클릭해서 수정
+    tablePreviewEl.addEventListener("click", function (e) {
+      var btn = e.target.closest(".cell-btn");
+      if (!btn || tablePreviewEl.querySelector(".cell-input")) return;
+      var idx = parseInt(btn.getAttribute("data-idx"), 10);
+      var field = btn.getAttribute("data-field");
+      var table = buildTable();
+      if (!table[idx]) return;
+      var curSec = table[idx][field];
+
+      var input = document.createElement("input");
+      input.type = "text";
+      input.inputMode = "numeric";
+      input.className = "cell-input";
+      input.value = fmt(curSec);
+      input.setAttribute("aria-label", (idx + 1) + "라운드 " + (field === "hold" ? "숨참기" : "휴식") + " 시간");
+      btn.replaceWith(input);
+      input.focus();
+      input.select();
+
+      var done = false;
+      function commit(save) {
+        if (done) return;
+        done = true;
+        if (save) {
+          var parsed = parseTimeInput(input.value);
+          if (parsed === null || parsed < 5 || parsed > 900) {
+            toast("5초 ~ 15분 사이로 입력해 주세요. 예: 1:30 또는 90");
+          } else {
+            var s = currentSettings();
+            if (!s.customRows || !s.customRows.length) {
+              s.customRows = table.map(function (r) { return { hold: r.hold, rest: r.rest }; });
+            }
+            s.customRows[idx][field] = clamp(parsed, 5, 900);
+            s.rounds = s.customRows.length;
+            savePrefs();
+          }
+        }
+        renderBreath();
+      }
+
+      input.addEventListener("keydown", function (ev) {
+        if (ev.key === "Enter") { ev.preventDefault(); commit(true); }
+        else if (ev.key === "Escape") { ev.preventDefault(); commit(false); }
+      });
+      input.addEventListener("blur", function () { commit(true); });
+    });
+
+    var resetCustomBtn = $("#resetCustomTableBtn");
+    if (resetCustomBtn) {
+      resetCustomBtn.addEventListener("click", function () {
+        var s = currentSettings();
+        s.customRows = null;
+        s.rounds = clamp(s.rounds, 3, 12);
+        savePrefs();
+        renderBreath();
+        toast("자동 계산 테이블로 초기화했어요.");
+      });
+    }
 
     // 타이머
     $("#startBtn").addEventListener("click", function () {
@@ -1602,6 +1829,15 @@
 
     // 버디 작성
     postNicknameEl.value = prefs.nickname || "";
+    postPoolEl.addEventListener("change", function () {
+      var isCustom = postPoolEl.value === "기타";
+      postPoolCustomEl.hidden = !isCustom;
+      if (isCustom) {
+        postPoolCustomEl.focus();
+      } else {
+        postPoolCustomEl.value = "";
+      }
+    });
     postContentEl.addEventListener("input", function () {
       postContentEl.style.height = "auto";
       postContentEl.style.height = Math.min(postContentEl.scrollHeight, 120) + "px";
@@ -1616,6 +1852,15 @@
       e.preventDefault();
       var content = postContentEl.value.trim();
       if (!content) { toast("한 줄 내용을 입력해 주세요."); return; }
+      var poolVal = postPoolEl.value;
+      if (poolVal === "기타") {
+        poolVal = postPoolCustomEl.value.trim();
+        if (!poolVal) {
+          toast("장소를 직접 입력해 주세요.");
+          postPoolCustomEl.focus();
+          return;
+        }
+      }
       var nick = postNicknameEl.value.trim() || "익명";
       prefs.nickname = nick;
       savePrefs();
@@ -1624,7 +1869,7 @@
         nickname: nick,
         content: content,
         tag_date: postDateEl.value || null,
-        tag_pool: postPoolEl.value || null
+        tag_pool: poolVal || null
       };
 
       var btn = postFormEl.querySelector("button[type=submit]");
@@ -1635,6 +1880,8 @@
         postContentEl.style.height = "auto";
         postDateEl.value = "";
         postPoolEl.value = "";
+        postPoolCustomEl.value = "";
+        postPoolCustomEl.hidden = true;
         renderPosts();
         toast("버디 글을 올렸어요.");
       } catch (err) {
@@ -1655,6 +1902,12 @@
       if (act === "toggle") {
         state.openComments[id] = !state.openComments[id];
         renderPosts();
+        return;
+      }
+
+      if (act === "edit-post") {
+        var target = state.posts.filter(function (p) { return p.id === id; })[0];
+        if (target) openPostEditSheet(target);
         return;
       }
 
@@ -1767,6 +2020,15 @@
 
     $("#modePill").hidden = true;
     try {
+      var savedPin = "";
+      try { savedPin = sessionStorage.getItem("sfd.adminPin") || ""; } catch (e) { /* ignore */ }
+      if (savedPin && sb) {
+        var pinCheck = await sb.rpc("verify_admin_pin", { p_pin: savedPin });
+        if (!pinCheck.error && pinCheck.data === true) {
+          state.isAdmin = true;
+          state.adminPin = savedPin;
+        }
+      }
       await Promise.all([refreshSchedules(), refreshPosts()]);
     } catch (err) {
       console.error(err);

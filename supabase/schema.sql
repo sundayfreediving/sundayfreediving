@@ -1,40 +1,42 @@
 -- ============================================================================
---  선데이프리다이빙 PWA — Supabase 스키마
+--  선데이프리다이빙 PWA — Supabase 스키마 (v1.1.0)
 --  Supabase Dashboard → SQL Editor → New query → 아래 전체를 붙여넣고 RUN
 --  ※ 여러 번 실행해도 안전하도록 작성했습니다.
--- ============================================================================
---
---  테이블
---    · schedules       수업일정 (관리자만 쓰기)
---    · buddy_posts     버디 모집 한 줄 글 (누구나 읽기/쓰기)
---    · buddy_comments  버디 글 댓글 (누구나 읽기/쓰기)
---
---  관리자 판별: 로그인한 사용자의 이메일이 아래 ADMIN_EMAIL 과 같은 경우만
---  수업일정을 추가/수정/삭제할 수 있습니다. (앱의 config.js ADMIN_EMAIL과 동일)
 -- ============================================================================
 
 create extension if not exists pgcrypto;
 
 -- ---------------------------------------------------------------------------
--- 0. 관리자 판별 함수
+-- 0. 관리자 번호(PIN) 저장 테이블 (외부 읽기 차단)
 -- ---------------------------------------------------------------------------
-create or replace function public.is_admin()
+create table if not exists public.app_settings (
+  key   text primary key,
+  value text not null
+);
+
+alter table public.app_settings enable row level security;
+
+insert into public.app_settings (key, value)
+values ('admin_pin', '0619')
+on conflict (key) do nothing;
+
+create or replace function public.verify_admin_pin(p_pin text)
 returns boolean
 language sql
 stable
 security definer
 set search_path = public
 as $$
-  select coalesce(
-    lower(coalesce(auth.jwt() ->> 'email', '')) = 'sundayfreediving@gmail.com',
-    false
+  select exists(
+    select 1 from public.app_settings
+     where key = 'admin_pin' and value = coalesce(p_pin, '')
   );
 $$;
 
-grant execute on function public.is_admin() to anon, authenticated;
+grant execute on function public.verify_admin_pin(text) to anon, authenticated;
 
 -- ---------------------------------------------------------------------------
--- 1. 수업일정
+-- 1. 수업일정 (누구나 열람, 관리자 번호 입력 시에만 추가/수정/삭제)
 -- ---------------------------------------------------------------------------
 create table if not exists public.schedules (
   id          uuid primary key default gen_random_uuid(),
@@ -50,7 +52,6 @@ create table if not exists public.schedules (
                 check (char_length(level) between 1 and 20),
   capacity    integer check (capacity is null or (capacity >= 0 and capacity <= 99)),
   notes       text check (notes is null or char_length(notes) <= 500),
-  created_by  uuid references auth.users (id) on delete set null,
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now()
 );
@@ -59,37 +60,12 @@ create index if not exists schedules_date_idx on public.schedules (class_date, s
 
 alter table public.schedules enable row level security;
 
-drop policy if exists "schedules_read_all"   on public.schedules;
-drop policy if exists "schedules_admin_add"  on public.schedules;
-drop policy if exists "schedules_admin_edit" on public.schedules;
-drop policy if exists "schedules_admin_del"  on public.schedules;
-
--- 누구나(비로그인 포함) 수업일정을 볼 수 있음
+drop policy if exists "schedules_read_all" on public.schedules;
 create policy "schedules_read_all"
   on public.schedules for select
   to anon, authenticated
   using (true);
 
--- 관리자만 추가
-create policy "schedules_admin_add"
-  on public.schedules for insert
-  to authenticated
-  with check (public.is_admin());
-
--- 관리자만 수정
-create policy "schedules_admin_edit"
-  on public.schedules for update
-  to authenticated
-  using (public.is_admin())
-  with check (public.is_admin());
-
--- 관리자만 삭제
-create policy "schedules_admin_del"
-  on public.schedules for delete
-  to authenticated
-  using (public.is_admin());
-
--- updated_at 자동 갱신
 create or replace function public.touch_updated_at()
 returns trigger
 language plpgsql
@@ -105,72 +81,172 @@ create trigger schedules_touch_updated_at
   before update on public.schedules
   for each row execute function public.touch_updated_at();
 
+create or replace function public.admin_upsert_schedule(
+  p_pin        text,
+  p_id         uuid,
+  p_title      text,
+  p_class_date date,
+  p_start_time text,
+  p_end_time   text,
+  p_location   text,
+  p_level      text,
+  p_capacity   integer,
+  p_notes      text
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_id uuid;
+begin
+  if not public.verify_admin_pin(p_pin) then
+    raise exception '관리자 번호가 맞지 않습니다.';
+  end if;
+
+  if p_id is null then
+    insert into public.schedules (title, class_date, start_time, end_time, location, level, capacity, notes)
+    values (p_title, p_class_date, p_start_time, p_end_time, p_location, p_level, p_capacity, p_notes)
+    returning id into v_id;
+  else
+    update public.schedules
+       set title      = p_title,
+           class_date = p_class_date,
+           start_time = p_start_time,
+           end_time   = p_end_time,
+           location   = p_location,
+           level      = p_level,
+           capacity   = p_capacity,
+           notes      = p_notes
+     where id = p_id
+    returning id into v_id;
+  end if;
+  return v_id;
+end;
+$$;
+
+create or replace function public.admin_delete_schedule(p_pin text, p_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not public.verify_admin_pin(p_pin) then
+    raise exception '관리자 번호가 맞지 않습니다.';
+  end if;
+  delete from public.schedules where id = p_id;
+end;
+$$;
+
+grant execute on function public.admin_upsert_schedule(text, uuid, text, date, text, text, text, text, integer, text) to anon, authenticated;
+grant execute on function public.admin_delete_schedule(text, uuid) to anon, authenticated;
+
 -- ---------------------------------------------------------------------------
--- 2. 버디 모집 글
+-- 2. 버디 모집 글 (누구나 읽기/쓰기, 본인만 수정, 관리자만 삭제)
 -- ---------------------------------------------------------------------------
 create table if not exists public.buddy_posts (
-  id          uuid primary key default gen_random_uuid(),
-  nickname    text not null default '익명'
-                check (char_length(btrim(nickname)) between 1 and 20),
-  content     text not null
-                check (char_length(btrim(content)) between 1 and 200),
-  tag_date    date,
-  tag_pool    text check (tag_pool is null or tag_pool in ('K26', '잠실', '딥스테이션', '보홀', '기타')),
-  author_id   uuid references auth.users (id) on delete set null,
-  created_at  timestamptz not null default now()
+  id           uuid primary key default gen_random_uuid(),
+  nickname     text not null default '익명'
+                 check (char_length(btrim(nickname)) between 1 and 20),
+  content      text not null
+                 check (char_length(btrim(content)) between 1 and 200),
+  tag_date     date,
+  tag_pool     text check (tag_pool is null or char_length(btrim(tag_pool)) between 1 and 30),
+  author_token text,
+  created_at   timestamptz not null default now()
 );
+
+alter table public.buddy_posts add column if not exists author_token text;
+alter table public.buddy_posts drop constraint if exists buddy_posts_tag_pool_check;
+alter table public.buddy_posts add constraint buddy_posts_tag_pool_check
+  check (tag_pool is null or char_length(btrim(tag_pool)) between 1 and 30);
 
 create index if not exists buddy_posts_created_idx on public.buddy_posts (created_at desc);
 
 alter table public.buddy_posts enable row level security;
 
-drop policy if exists "posts_read_all"     on public.buddy_posts;
-drop policy if exists "posts_insert_all"   on public.buddy_posts;
-drop policy if exists "posts_delete_admin" on public.buddy_posts;
+drop policy if exists "posts_read_all"   on public.buddy_posts;
+drop policy if exists "posts_insert_all" on public.buddy_posts;
 
--- 누구나 읽기
 create policy "posts_read_all"
   on public.buddy_posts for select
   to anon, authenticated
   using (true);
 
--- 누구나 쓰기 (내용 길이/형식은 테이블 check 로 제한)
 create policy "posts_insert_all"
   on public.buddy_posts for insert
   to anon, authenticated
   with check (
     char_length(btrim(content)) between 1 and 200
     and char_length(btrim(nickname)) between 1 and 20
-    and (tag_pool is null or tag_pool in ('K26', '잠실', '딥스테이션', '보홀', '기타'))
+    and (tag_pool is null or char_length(btrim(tag_pool)) between 1 and 30)
   );
 
--- 삭제는 관리자 또는 로그인한 작성자 본인만
-create policy "posts_delete_admin"
-  on public.buddy_posts for delete
-  to authenticated
-  using (public.is_admin() or author_id = auth.uid());
+create or replace function public.update_buddy_post(
+  p_id       uuid,
+  p_token    text,
+  p_content  text,
+  p_tag_date date,
+  p_tag_pool text
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  update public.buddy_posts
+     set content  = p_content,
+         tag_date = p_tag_date,
+         tag_pool = p_tag_pool
+   where id = p_id
+     and author_token is not null
+     and author_token = p_token;
+
+  if not found then
+    raise exception '본인이 작성한 글만 수정할 수 있습니다.';
+  end if;
+end;
+$$;
+
+create or replace function public.admin_delete_buddy_post(p_pin text, p_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not public.verify_admin_pin(p_pin) then
+    raise exception '관리자만 삭제할 수 있습니다.';
+  end if;
+  delete from public.buddy_posts where id = p_id;
+end;
+$$;
+
+grant execute on function public.update_buddy_post(uuid, text, text, date, text) to anon, authenticated;
+grant execute on function public.admin_delete_buddy_post(text, uuid) to anon, authenticated;
 
 -- ---------------------------------------------------------------------------
--- 3. 버디 댓글
+-- 3. 버디 댓글 (누구나 읽기/쓰기, 관리자만 삭제)
 -- ---------------------------------------------------------------------------
 create table if not exists public.buddy_comments (
-  id          uuid primary key default gen_random_uuid(),
-  post_id     uuid not null references public.buddy_posts (id) on delete cascade,
-  nickname    text not null default '익명'
-                check (char_length(btrim(nickname)) between 1 and 20),
-  content     text not null
-                check (char_length(btrim(content)) between 1 and 150),
-  author_id   uuid references auth.users (id) on delete set null,
-  created_at  timestamptz not null default now()
+  id         uuid primary key default gen_random_uuid(),
+  post_id    uuid not null references public.buddy_posts (id) on delete cascade,
+  nickname   text not null default '익명'
+               check (char_length(btrim(nickname)) between 1 and 20),
+  content    text not null
+               check (char_length(btrim(content)) between 1 and 150),
+  created_at timestamptz not null default now()
 );
 
 create index if not exists buddy_comments_post_idx on public.buddy_comments (post_id, created_at);
 
 alter table public.buddy_comments enable row level security;
 
-drop policy if exists "comments_read_all"     on public.buddy_comments;
-drop policy if exists "comments_insert_all"   on public.buddy_comments;
-drop policy if exists "comments_delete_admin" on public.buddy_comments;
+drop policy if exists "comments_read_all"   on public.buddy_comments;
+drop policy if exists "comments_insert_all" on public.buddy_comments;
 
 create policy "comments_read_all"
   on public.buddy_comments for select
@@ -185,36 +261,26 @@ create policy "comments_insert_all"
     and char_length(btrim(nickname)) between 1 and 20
   );
 
-create policy "comments_delete_admin"
-  on public.buddy_comments for delete
-  to authenticated
-  using (public.is_admin() or author_id = auth.uid());
+create or replace function public.admin_delete_buddy_comment(p_pin text, p_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not public.verify_admin_pin(p_pin) then
+    raise exception '관리자만 삭제할 수 있습니다.';
+  end if;
+  delete from public.buddy_comments where id = p_id;
+end;
+$$;
+
+grant execute on function public.admin_delete_buddy_comment(text, uuid) to anon, authenticated;
 
 -- ---------------------------------------------------------------------------
--- 4. 권한 (RLS 와 별개로 테이블 접근 권한 부여)
+-- 4. 기본 권한
 -- ---------------------------------------------------------------------------
 grant usage on schema public to anon, authenticated;
-
 grant select on public.schedules to anon, authenticated;
-grant insert, update, delete on public.schedules to authenticated;
-
 grant select, insert on public.buddy_posts to anon, authenticated;
-grant delete on public.buddy_posts to authenticated;
-
 grant select, insert on public.buddy_comments to anon, authenticated;
-grant delete on public.buddy_comments to authenticated;
-
--- ---------------------------------------------------------------------------
--- 5. (선택) 샘플 수업일정 — 필요할 때만 주석을 풀어 실행하세요.
--- ---------------------------------------------------------------------------
--- insert into public.schedules (title, class_date, start_time, end_time, location, level, capacity, notes)
--- values
---   ('AIDA2 코스 1일차', current_date + 1, '19:00', '22:00', 'K26', 'AIDA2', 4, '이론 40분 + 풀 세션. 교재, 수영복 지참.'),
---   ('AIDA3 딥다이브',  current_date + 2, '10:00', '17:00', '딥스테이션', 'AIDA3', 6, '08:00 잠실 출발 · 차량 2대'),
---   ('자율연습',        current_date + 4, '19:00', '21:00', 'K26', '자율연습', 8, '버디 페어로 진행합니다.');
-
--- ---------------------------------------------------------------------------
--- 확인용: 아래 쿼리로 정책이 잘 걸렸는지 볼 수 있습니다.
--- ---------------------------------------------------------------------------
--- select tablename, policyname, cmd, roles from pg_policies
---  where schemaname = 'public' order by tablename, cmd;
