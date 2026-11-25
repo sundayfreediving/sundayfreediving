@@ -2740,7 +2740,109 @@
       console.error(err);
       toast("데이터를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.");
     }
+    initLicenseVault();
     renderScheduleChrome();
+  }
+
+  var LICENSE_KEY = "sfd.licensePhoto";
+
+  function loadLicensePhoto() {
+    try {
+      return localStorage.getItem(LICENSE_KEY) || "";
+    } catch (e) {
+      return "";
+    }
+  }
+
+  function renderLicenseVault() {
+    var imgData = loadLicensePhoto();
+    var statusEl = $("#licenseStatusText");
+    var openBtn = $("#licenseOpenBtn");
+    var replaceBtn = $("#licenseReplaceBtn");
+    var deleteBtn = $("#licenseDeleteBtn");
+    if (!openBtn) return;
+    if (imgData) {
+      if (statusEl) statusEl.textContent = "저장됨 · 누르면 바로 크게 열려요";
+      openBtn.textContent = "자격증 보기";
+      if (replaceBtn) replaceBtn.hidden = false;
+      if (deleteBtn) deleteBtn.hidden = false;
+    } else {
+      if (statusEl) statusEl.textContent = "사진 올려 두면 입장할 때 바로 꺼내 봐요";
+      openBtn.textContent = "자격증 등록";
+      if (replaceBtn) replaceBtn.hidden = true;
+      if (deleteBtn) deleteBtn.hidden = true;
+    }
+  }
+
+  function saveResizedLicense(file) {
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function (ev) {
+      var img = new Image();
+      img.onload = function () {
+        var maxSide = 1600;
+        var w = img.naturalWidth || img.width;
+        var h = img.naturalHeight || img.height;
+        var scale = Math.min(1, maxSide / Math.max(w, h));
+        var cw = Math.max(1, Math.round(w * scale));
+        var ch = Math.max(1, Math.round(h * scale));
+        var canvas = document.createElement("canvas");
+        canvas.width = cw;
+        canvas.height = ch;
+        var ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, cw, ch);
+        var out = canvas.toDataURL("image/jpeg", 0.88);
+        try {
+          localStorage.setItem(LICENSE_KEY, out);
+          renderLicenseVault();
+          toast("자격증 사진이 저장됐어요");
+        } catch (err) {
+          toast("이미지 용량이 커서 저장에 실패했어요");
+        }
+      };
+      img.src = ev.target.result;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function initLicenseVault() {
+    renderLicenseVault();
+    var openBtn = $("#licenseOpenBtn");
+    var replaceBtn = $("#licenseReplaceBtn");
+    var deleteBtn = $("#licenseDeleteBtn");
+    var fileInput = $("#licenseFileInput");
+    if (openBtn) {
+      openBtn.addEventListener("click", function () {
+        var imgData = loadLicensePhoto();
+        if (imgData) {
+          $("#lightboxImg").src = imgData;
+          $("#lightboxName").textContent = "자격증";
+          $("#photoLightbox").hidden = false;
+        } else if (fileInput) {
+          fileInput.click();
+        }
+      });
+    }
+    if (replaceBtn && fileInput) {
+      replaceBtn.addEventListener("click", function () {
+        fileInput.click();
+      });
+    }
+    if (deleteBtn) {
+      deleteBtn.addEventListener("click", function () {
+        try { localStorage.removeItem(LICENSE_KEY); } catch (e) { /* ignore */ }
+        renderLicenseVault();
+        toast("자격증 사진을 지웠어요");
+      });
+    }
+    if (fileInput) {
+      fileInput.addEventListener("change", function () {
+        if (fileInput.files && fileInput.files[0]) {
+          saveResizedLicense(fileInput.files[0]);
+          fileInput.value = "";
+        }
+      });
+    }
   }
 
   // Android / Galaxy PWA 원탭 설치 버튼
