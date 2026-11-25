@@ -2743,6 +2743,29 @@
     renderScheduleChrome();
   }
 
+  // Android / Galaxy PWA 원탭 설치 버튼
+  var deferredInstallPrompt = null;
+  var installAppBtn = $("#installAppBtn");
+  window.addEventListener("beforeinstallprompt", function (e) {
+    e.preventDefault();
+    deferredInstallPrompt = e;
+    if (installAppBtn) installAppBtn.hidden = false;
+  });
+  window.addEventListener("appinstalled", function () {
+    deferredInstallPrompt = null;
+    if (installAppBtn) installAppBtn.hidden = true;
+  });
+  if (installAppBtn) {
+    installAppBtn.addEventListener("click", function () {
+      if (!deferredInstallPrompt) return;
+      deferredInstallPrompt.prompt();
+      deferredInstallPrompt.userChoice.then(function () {
+        deferredInstallPrompt = null;
+        installAppBtn.hidden = true;
+      });
+    });
+  }
+
   // 서비스 워커 등록 (https 또는 localhost에서만)
   if ("serviceWorker" in navigator && location.protocol.indexOf("http") === 0) {
     window.addEventListener("load", function () {
