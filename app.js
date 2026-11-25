@@ -671,7 +671,7 @@
     stepOutEl.textContent = s.stepSec + "초";
     stepLabelEl.innerHTML = state.tableType === "co2"
       ? '라운드마다 휴식 <em>감소</em>'
-      : '라운드마다 Apnea Training <em>증가</em>';
+      : '라운드마다 숨참기 <em>증가</em>';
 
     var resetCustomBtn = $("#resetCustomTableBtn");
     if (resetCustomBtn) resetCustomBtn.hidden = !isCustom;
@@ -686,16 +686,16 @@
     tableSubEl.textContent = isCustom
       ? "라운드별 시간 직접 설정됨 · 누르면 언제든 수정"
       : (state.tableType === "co2"
-        ? "Apnea Training " + fmt(hold0) + " 고정 · 휴식 " + fmt(rest0) + " → " + fmt(restLast)
-        : "휴식 " + fmt(rest0) + " 고정 · Apnea Training " + fmt(hold0) + " → " + fmt(holdLast));
+        ? "숨참기 " + fmt(hold0) + " 고정 · 휴식 " + fmt(rest0) + " → " + fmt(restLast)
+        : "휴식 " + fmt(rest0) + " 고정 · 숨참기 " + fmt(hold0) + " → " + fmt(holdLast));
 
     var total = 0;
-    var rowsHtml = '<div class="table-row head"><span>#</span><span>Apnea Training</span><span>휴식</span></div>';
+    var rowsHtml = '<div class="table-row head"><span>#</span><span>숨참기</span><span>휴식</span></div>';
     table.forEach(function (r, i) {
       total += r.hold + r.rest;
       rowsHtml += '<div class="table-row' + (i % 2 ? " alt" : "") + (i === table.length - 1 ? " final" : "") + '">'
         + '<span class="rnd">' + r.round + '</span>'
-        + '<button type="button" class="cell-btn hold" data-idx="' + i + '" data-field="hold" aria-label="' + r.round + '라운드 Apnea Training 시간 수정">' + fmt(r.hold) + '</button>'
+        + '<button type="button" class="cell-btn hold" data-idx="' + i + '" data-field="hold" aria-label="' + r.round + '라운드 숨참기 시간 수정">' + fmt(r.hold) + '</button>'
         + '<button type="button" class="cell-btn rest" data-idx="' + i + '" data-field="rest" aria-label="' + r.round + '라운드 휴식 시간 수정">' + fmt(r.rest) + '</button>'
         + '</div>';
     });
@@ -2083,27 +2083,6 @@
         renderBreath();
       });
     });
-
-    // Apnea Training 내부 보기 전환 (테이블 / 설정 / 기록)
-    var breathPaneSeg = $("#breathPaneSeg");
-    var breathPaneTable = $("#breathPaneTable");
-    var breathPaneSettings = $("#tableSettings");
-    var breathPaneHistory = $("#breathPaneHistory");
-    if (breathPaneSeg && breathPaneTable && breathPaneSettings && breathPaneHistory) {
-      breathPaneSeg.addEventListener("click", function (ev) {
-        var btn = ev.target.closest("[data-breath-pane]");
-        if (!btn) return;
-        var pane = btn.getAttribute("data-breath-pane");
-        $$("[data-breath-pane]", breathPaneSeg).forEach(function (b) {
-          var on = b === btn;
-          b.classList.toggle("is-active", on);
-          b.setAttribute("aria-selected", on ? "true" : "false");
-        });
-        breathPaneTable.hidden = (pane !== "table");
-        breathPaneSettings.hidden = (pane !== "settings");
-        breathPaneHistory.hidden = (pane !== "history");
-      });
-    }
 
     // 스텝퍼
     $$("[data-stepper]").forEach(function (group) {
