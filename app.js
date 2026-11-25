@@ -2325,6 +2325,7 @@
     });
 
     // 프로필 만들기
+    var profileCollapsibleEl = $("#profileCollapsible");
     var profileCardEl = $("#profileCard");
     var profileFabBtn = $("#profileFabBtn");
     var profileNickEl = $("#profileNickname");
@@ -2347,7 +2348,8 @@
         profileAvatarPreviewEl.textContent = "+";
         profilePhotoClearBtn.hidden = true;
       }
-      if (profileCardEl) profileCardEl.hidden = !profileExpanded;
+      if (profileCollapsibleEl) profileCollapsibleEl.classList.toggle("is-open", profileExpanded);
+      if (profileCardEl) profileCardEl.hidden = false;
       if (profileBodyEl) profileBodyEl.hidden = false;
       if (profileToggleBtn) profileToggleBtn.textContent = "접기";
       if (profileFabBtn) {
