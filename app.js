@@ -1461,8 +1461,9 @@
       if (open) {
         var listHtml = comments.length
           ? comments.map(function (c) {
+            var cNick = c.nickname || "익명";
             return '<div class="comment">'
-              + '<span class="comment-name">' + esc(c.nickname || "익명") + '</span>'
+              + '<button type="button" class="comment-name" data-act="full-nick" data-nick="' + esc(cNick) + '" title="' + esc(cNick) + '">' + esc(cNick) + '</button>'
               + '<span class="comment-text">' + esc(c.content) + '</span>'
               + (state.isAdmin
                 ? '<button type="button" class="comment-del" data-act="del-comment" data-id="' + esc(c.id) + '" aria-label="댓글 삭제"><svg><use href="#i-close"/></svg></button>'

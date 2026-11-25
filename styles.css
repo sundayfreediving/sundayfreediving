@@ -1887,6 +1887,17 @@ svg {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  cursor: pointer;
+  text-align: left;
+  padding: 0;
+}
+
+.comment-name.is-expanded {
+  max-width: none;
+  overflow: visible;
+  text-overflow: unset;
+  white-space: normal;
+  word-break: break-all;
 }
 
 .comment-text { flex: 1; color: var(--ink); word-break: break-word; }
