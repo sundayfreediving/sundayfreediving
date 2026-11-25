@@ -21,7 +21,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="선데이">
-<link rel="stylesheet" href="./styles.css?v=1.3.0">
+<link rel="stylesheet" href="./styles.css?v=1.3.1">
 </head>
 <body>
 
@@ -129,7 +129,7 @@
 <div class="app" id="app">
   <header class="topbar">
     <div class="brand">
-      <span class="brand-mark" aria-hidden="true"><img src="./icons/brand-logo.png?v=1.3.0" alt=""></span>
+      <span class="brand-mark" aria-hidden="true"><img src="./icons/brand-logo.png?v=1.3.1" alt=""></span>
       <span class="brand-text">
         <strong>선데이프리다이빙</strong>
         <span class="brand-sub">
@@ -208,39 +208,34 @@
 
     <!-- ================= Apnea Training ================= -->
     <section class="view" id="view-breath" data-view="breath" aria-label="Apnea Training">
-      <div class="view-head">
+      <div class="breath-top-bar">
         <h1 class="view-title">Apnea Training</h1>
-        <p class="view-desc">내 마음대로 테이블을 맞추고, 숫자를 눌러 라운드별로 바로 바꿀 수 있어요.</p>
+        <button class="pb-pill-btn" id="pbEditBtn" type="button" aria-label="PB 수정">
+          <span class="pb-pill-label">PB</span>
+          <strong class="pb-pill-val" id="pbValue">2:30</strong>
+        </button>
       </div>
 
-      <div class="card pb-card">
-        <div class="pb-main">
-          <div>
-            <p class="card-label">Personal Best</p>
-            <p class="pb-value" id="pbValue">2:30</p>
-          </div>
-          <button class="btn-ghost" id="pbEditBtn" type="button">PB 수정</button>
-        </div>
-        <div class="pb-edit" id="pbEditRow" hidden>
+      <div class="card pb-edit-card" id="pbEditRow" hidden>
+        <div class="pb-edit">
           <input class="field mono" id="pbInput" inputmode="numeric" autocomplete="off" placeholder="2:30" aria-label="개인 최고 기록">
           <button class="btn-primary btn-small" id="pbSaveBtn" type="button">저장</button>
           <button class="btn-ghost" id="pbCancelBtn" type="button">취소</button>
         </div>
-        <p class="pb-hint" id="pbHint">PB를 입력하지 않아도 아래 표의 숫자를 눌러 직접 조절할 수 있어요.</p>
       </div>
 
-      <div class="segmented" id="tableSeg" role="tablist" aria-label="테이블 종류">
-        <button class="seg-btn is-active" data-type="co2" role="tab" aria-selected="true" type="button">CO2 테이블</button>
-        <button class="seg-btn" data-type="o2" role="tab" aria-selected="false" type="button">O2 테이블</button>
+      <div class="breath-controls-row">
+        <div class="segmented compact-seg" id="tableSeg" role="tablist" aria-label="테이블 종류">
+          <button class="seg-btn is-active" data-type="co2" role="tab" aria-selected="true" type="button">CO2</button>
+          <button class="seg-btn" data-type="o2" role="tab" aria-selected="false" type="button">O2</button>
+        </div>
+        <button class="btn-start compact-start" id="startBtn" type="button">
+          <span class="btn-start-icon"><svg><use href="#i-play"/></svg></span>
+          훈련 시작
+        </button>
       </div>
 
-      <button class="btn-start" id="startBtn" type="button">
-        <span class="btn-start-icon"><svg><use href="#i-play"/></svg></span>
-        훈련 시작
-      </button>
-      <p class="start-note">이어폰을 끼면 신호음이 더 잘 들려요. 절대 물속에서 하지 마세요.</p>
-
-      <div class="card table-card">
+      <div class="card table-card compact-table-card">
         <div class="table-meta">
           <div>
             <p class="card-label" id="tableTitle">CO2 · 8 라운드</p>
@@ -249,7 +244,21 @@
           <span class="tag" id="tableTotal">총 20분</span>
         </div>
 
-        <div class="settings" id="tableSettings">
+        <div class="segmented breath-pane-seg" id="breathPaneSeg" role="tablist" aria-label="훈련 보기 전환">
+          <button class="seg-btn is-active" data-breath-pane="table" type="button" role="tab" aria-selected="true">테이블</button>
+          <button class="seg-btn" data-breath-pane="settings" type="button" role="tab" aria-selected="false">설정</button>
+          <button class="seg-btn" data-breath-pane="history" type="button" role="tab" aria-selected="false">기록 <span class="count" id="historyCount"></span></button>
+        </div>
+
+        <div id="breathPaneTable">
+          <div class="table-custom-bar">
+            <span class="table-custom-hint">숫자를 눌러 라운드별 시간 바로 수정</span>
+            <button class="link-btn" id="resetCustomTableBtn" type="button" hidden>초기화</button>
+          </div>
+          <div class="table-list" id="tablePreview" aria-label="테이블 미리보기"></div>
+        </div>
+
+        <div class="settings" id="tableSettings" hidden>
           <div class="setting-row">
             <span class="setting-name">라운드</span>
             <div class="stepper" data-stepper="rounds">
@@ -259,7 +268,7 @@
             </div>
           </div>
           <div class="setting-row">
-            <span class="setting-name">Apnea Training <em>PB 대비</em></span>
+            <span class="setting-name">Hold <em>PB 대비</em></span>
             <div class="stepper" data-stepper="holdPct">
               <button type="button" class="step-btn" data-step="-5" aria-label="Apnea Training 비율 줄이기">−</button>
               <output id="holdPctOut">50%</output>
@@ -284,21 +293,15 @@
           </div>
         </div>
 
-        <div class="table-custom-bar">
-          <span class="table-custom-hint">숫자를 누르면 라운드별로 바로 바꿀 수 있어요</span>
-          <button class="link-btn" id="resetCustomTableBtn" type="button" hidden>자동 계산으로 초기화</button>
+        <div class="breath-history-pane" id="breathPaneHistory" hidden>
+          <div class="section-head">
+            <h2>훈련 기록</h2>
+            <button class="link-btn" id="clearHistoryBtn" type="button">전체 삭제</button>
+          </div>
+          <div class="history-list" id="historyList"></div>
+          <p class="empty" id="historyEmpty" hidden>아직 기록이 없어요. 첫 라운드를 시작해 보세요.</p>
         </div>
-        <div class="table-list" id="tablePreview" aria-label="테이블 미리보기"></div>
       </div>
-
-      <section class="section">
-        <div class="section-head">
-          <h2>훈련 기록 <span class="count" id="historyCount"></span></h2>
-          <button class="link-btn" id="clearHistoryBtn" type="button">전체 삭제</button>
-        </div>
-        <div class="history-list" id="historyList"></div>
-        <p class="empty" id="historyEmpty" hidden>아직 기록이 없어요. 첫 라운드를 시작해 보세요.</p>
-      </section>
     </section>
 
     <!-- ================= 수업일정 ================= -->
@@ -484,7 +487,7 @@
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-<script src="./config.js?v=1.3.0"></script>
-<script src="./app.js?v=1.3.0"></script>
+<script src="./config.js?v=1.3.1"></script>
+<script src="./app.js?v=1.3.1"></script>
 </body>
 </html>

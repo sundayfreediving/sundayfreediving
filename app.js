@@ -2046,6 +2046,10 @@
 
     // PB
     $("#pbEditBtn").addEventListener("click", function () {
+      if (!pbEditRowEl.hidden) {
+        pbEditRowEl.hidden = true;
+        return;
+      }
       pbEditRowEl.hidden = false;
       pbInputEl.value = fmt(prefs.pb);
       setTimeout(function () { pbInputEl.focus(); pbInputEl.select(); }, 60);
@@ -2079,6 +2083,27 @@
         renderBreath();
       });
     });
+
+    // Apnea Training 내부 보기 전환 (테이블 / 설정 / 기록)
+    var breathPaneSeg = $("#breathPaneSeg");
+    var breathPaneTable = $("#breathPaneTable");
+    var breathPaneSettings = $("#tableSettings");
+    var breathPaneHistory = $("#breathPaneHistory");
+    if (breathPaneSeg && breathPaneTable && breathPaneSettings && breathPaneHistory) {
+      breathPaneSeg.addEventListener("click", function (ev) {
+        var btn = ev.target.closest("[data-breath-pane]");
+        if (!btn) return;
+        var pane = btn.getAttribute("data-breath-pane");
+        $$("[data-breath-pane]", breathPaneSeg).forEach(function (b) {
+          var on = b === btn;
+          b.classList.toggle("is-active", on);
+          b.setAttribute("aria-selected", on ? "true" : "false");
+        });
+        breathPaneTable.hidden = (pane !== "table");
+        breathPaneSettings.hidden = (pane !== "settings");
+        breathPaneHistory.hidden = (pane !== "history");
+      });
+    }
 
     // 스텝퍼
     $$("[data-stepper]").forEach(function (group) {
