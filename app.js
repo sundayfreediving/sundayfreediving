@@ -2046,16 +2046,17 @@
 
     // PB
     $("#pbEditBtn").addEventListener("click", function () {
-      if (!pbEditRowEl.hidden) {
-        pbEditRowEl.hidden = true;
+      var isOpen = pbEditRowEl.classList.contains("is-open");
+      if (isOpen) {
+        pbEditRowEl.classList.remove("is-open");
         return;
       }
-      pbEditRowEl.hidden = false;
+      pbEditRowEl.classList.add("is-open");
       pbInputEl.value = fmt(prefs.pb);
-      setTimeout(function () { pbInputEl.focus(); pbInputEl.select(); }, 60);
+      setTimeout(function () { pbInputEl.focus(); pbInputEl.select(); }, 90);
     });
     $("#pbCancelBtn").addEventListener("click", function () {
-      pbEditRowEl.hidden = true;
+      pbEditRowEl.classList.remove("is-open");
       pbInputEl.value = fmt(prefs.pb);
     });
     $("#pbSaveBtn").addEventListener("click", function () {
@@ -2066,10 +2067,22 @@
       }
       prefs.pb = val;
       savePrefs();
-      pbEditRowEl.hidden = true;
+      pbEditRowEl.classList.remove("is-open");
       renderBreath();
       toast("PB를 " + fmt(val) + "로 저장했어요.");
     });
+
+    // 설정 접기/펼치기
+    var settingsToggleBtn = $("#settingsToggleBtn");
+    var settingsCollapsible = $("#settingsCollapsible");
+    if (settingsToggleBtn && settingsCollapsible) {
+      settingsToggleBtn.addEventListener("click", function () {
+        var open = !settingsCollapsible.classList.contains("is-open");
+        settingsCollapsible.classList.toggle("is-open", open);
+        settingsToggleBtn.textContent = open ? "접기" : "설정";
+        settingsToggleBtn.setAttribute("aria-expanded", open ? "true" : "false");
+      });
+    }
     pbInputEl.addEventListener("keydown", function (e) {
       if (e.key === "Enter") { e.preventDefault(); $("#pbSaveBtn").click(); }
     });

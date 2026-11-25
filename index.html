@@ -21,7 +21,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="선데이">
-<link rel="stylesheet" href="./styles.css?v=1.3.2">
+<link rel="stylesheet" href="./styles.css?v=1.3.3">
 </head>
 <body>
 
@@ -129,7 +129,7 @@
 <div class="app" id="app">
   <header class="topbar">
     <div class="brand">
-      <span class="brand-mark" aria-hidden="true"><img src="./icons/brand-logo.png?v=1.3.2" alt=""></span>
+      <span class="brand-mark" aria-hidden="true"><img src="./icons/brand-logo.png?v=1.3.3" alt=""></span>
       <span class="brand-text">
         <strong>선데이프리다이빙</strong>
         <span class="brand-sub">
@@ -225,16 +225,20 @@
 
       <div class="card pb-card compact-pb-card">
         <div class="pb-main">
-          <div>
-            <p class="card-label">Personal Best</p>
-            <p class="pb-value" id="pbValue">2:30</p>
+          <div class="pb-inline">
+            <span class="pb-inline-label">Personal Best</span>
+            <strong class="pb-value" id="pbValue">2:30</strong>
           </div>
-          <button class="btn-ghost" id="pbEditBtn" type="button">PB 수정</button>
+          <button class="pb-edit-btn" id="pbEditBtn" type="button">수정</button>
         </div>
-        <div class="pb-edit" id="pbEditRow" hidden>
-          <input class="field mono" id="pbInput" inputmode="numeric" autocomplete="off" placeholder="2:30" aria-label="개인 최고 기록">
-          <button class="btn-primary btn-small" id="pbSaveBtn" type="button">저장</button>
-          <button class="btn-ghost" id="pbCancelBtn" type="button">취소</button>
+        <div class="collapsible" id="pbEditRow">
+          <div class="collapsible-inner">
+            <div class="pb-edit">
+              <input class="field mono" id="pbInput" inputmode="numeric" autocomplete="off" placeholder="2:30" aria-label="개인 최고 기록">
+              <button class="btn-primary btn-small" id="pbSaveBtn" type="button">저장</button>
+              <button class="btn-ghost" id="pbCancelBtn" type="button">취소</button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -244,40 +248,47 @@
             <p class="card-label" id="tableTitle">CO2 · 8 라운드</p>
             <p class="table-sub" id="tableSub">숨참기 1:15 고정 · 휴식 2:00 → 0:15</p>
           </div>
-          <span class="tag" id="tableTotal">총 20분</span>
+          <div class="table-meta-actions">
+            <span class="tag" id="tableTotal">총 20분</span>
+            <button class="link-btn" id="settingsToggleBtn" type="button" aria-expanded="true">접기</button>
+          </div>
         </div>
 
-        <div class="settings" id="tableSettings">
-          <div class="setting-row">
-            <span class="setting-name">라운드</span>
-            <div class="stepper" data-stepper="rounds">
-              <button type="button" class="step-btn" data-step="-1" aria-label="라운드 줄이기">−</button>
-              <output id="roundsOut">8</output>
-              <button type="button" class="step-btn" data-step="1" aria-label="라운드 늘리기">+</button>
-            </div>
-          </div>
-          <div class="setting-row">
-            <span class="setting-name">숨참기 <em>PB 대비</em></span>
-            <div class="stepper" data-stepper="holdPct">
-              <button type="button" class="step-btn" data-step="-5" aria-label="숨참기 비율 줄이기">−</button>
-              <output id="holdPctOut">50%</output>
-              <button type="button" class="step-btn" data-step="5" aria-label="숨참기 비율 늘리기">+</button>
-            </div>
-          </div>
-          <div class="setting-row">
-            <span class="setting-name">휴식 시작</span>
-            <div class="stepper" data-stepper="restStart">
-              <button type="button" class="step-btn" data-step="-15" aria-label="휴식 줄이기">−</button>
-              <output id="restOut">2:00</output>
-              <button type="button" class="step-btn" data-step="15" aria-label="휴식 늘리기">+</button>
-            </div>
-          </div>
-          <div class="setting-row">
-            <span class="setting-name" id="stepLabel">라운드마다 휴식 <em>감소</em></span>
-            <div class="stepper" data-stepper="stepSec">
-              <button type="button" class="step-btn" data-step="-5" aria-label="감소폭 줄이기">−</button>
-              <output id="stepOut">15초</output>
-              <button type="button" class="step-btn" data-step="5" aria-label="감소폭 늘리기">+</button>
+        <div class="collapsible is-open" id="settingsCollapsible">
+          <div class="collapsible-inner">
+            <div class="settings" id="tableSettings">
+              <div class="setting-row">
+                <span class="setting-name">라운드</span>
+                <div class="stepper" data-stepper="rounds">
+                  <button type="button" class="step-btn" data-step="-1" aria-label="라운드 줄이기">−</button>
+                  <output id="roundsOut">8</output>
+                  <button type="button" class="step-btn" data-step="1" aria-label="라운드 늘리기">+</button>
+                </div>
+              </div>
+              <div class="setting-row">
+                <span class="setting-name">숨참기 <em>PB 대비</em></span>
+                <div class="stepper" data-stepper="holdPct">
+                  <button type="button" class="step-btn" data-step="-5" aria-label="숨참기 비율 줄이기">−</button>
+                  <output id="holdPctOut">50%</output>
+                  <button type="button" class="step-btn" data-step="5" aria-label="숨참기 비율 늘리기">+</button>
+                </div>
+              </div>
+              <div class="setting-row">
+                <span class="setting-name">휴식 시작</span>
+                <div class="stepper" data-stepper="restStart">
+                  <button type="button" class="step-btn" data-step="-15" aria-label="휴식 줄이기">−</button>
+                  <output id="restOut">2:00</output>
+                  <button type="button" class="step-btn" data-step="15" aria-label="휴식 늘리기">+</button>
+                </div>
+              </div>
+              <div class="setting-row">
+                <span class="setting-name" id="stepLabel">라운드마다 휴식 <em>감소</em></span>
+                <div class="stepper" data-stepper="stepSec">
+                  <button type="button" class="step-btn" data-step="-5" aria-label="감소폭 줄이기">−</button>
+                  <output id="stepOut">15초</output>
+                  <button type="button" class="step-btn" data-step="5" aria-label="감소폭 늘리기">+</button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -482,7 +493,7 @@
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-<script src="./config.js?v=1.3.2"></script>
-<script src="./app.js?v=1.3.2"></script>
+<script src="./config.js?v=1.3.3"></script>
+<script src="./app.js?v=1.3.3"></script>
 </body>
 </html>
