@@ -143,6 +143,60 @@ $$;
 grant execute on function public.admin_upsert_schedule(text, uuid, text, date, text, text, text, text, integer, text) to anon, authenticated;
 grant execute on function public.admin_delete_schedule(text, uuid) to anon, authenticated;
 
+create or replace function public.upsert_schedule(
+  p_id         uuid,
+  p_title      text,
+  p_class_date date,
+  p_start_time text,
+  p_end_time   text,
+  p_location   text,
+  p_level      text,
+  p_capacity   integer,
+  p_notes      text
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_id uuid;
+begin
+  if p_id is null then
+    insert into public.schedules (title, class_date, start_time, end_time, location, level, capacity, notes)
+    values (p_title, p_class_date, p_start_time, p_end_time, p_location, p_level, p_capacity, p_notes)
+    returning id into v_id;
+  else
+    update public.schedules
+       set title      = p_title,
+           class_date = p_class_date,
+           start_time = p_start_time,
+           end_time   = p_end_time,
+           location   = p_location,
+           level      = p_level,
+           capacity   = p_capacity,
+           notes      = p_notes
+     where id = p_id
+    returning id into v_id;
+  end if;
+  return v_id;
+end;
+$$;
+
+create or replace function public.delete_schedule(p_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  delete from public.schedules where id = p_id;
+end;
+$$;
+
+grant execute on function public.upsert_schedule(uuid, text, date, text, text, text, text, integer, text) to anon, authenticated;
+grant execute on function public.delete_schedule(uuid) to anon, authenticated;
+
 -- ---------------------------------------------------------------------------
 -- 2. 버디 모집 글 (누구나 읽기/쓰기, 본인만 수정, 관리자만 삭제)
 -- ---------------------------------------------------------------------------
@@ -254,6 +308,26 @@ $$;
 grant execute on function public.update_buddy_post(uuid, text, text, date, text) to anon, authenticated;
 grant execute on function public.admin_update_buddy_post(text, uuid, text, date, text) to anon, authenticated;
 grant execute on function public.admin_delete_buddy_post(text, uuid) to anon, authenticated;
+
+create or replace function public.delete_buddy_post(p_id uuid, p_token text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  delete from public.buddy_posts
+   where id = p_id
+     and author_token is not null
+     and author_token = p_token;
+
+  if not found then
+    raise exception '본인이 작성한 글만 삭제할 수 있습니다.';
+  end if;
+end;
+$$;
+
+grant execute on function public.delete_buddy_post(uuid, text) to anon, authenticated;
 
 create or replace function public.sync_my_avatar(p_token text, p_avatar_url text)
 returns void

@@ -49,16 +49,47 @@
     if (!str) return null;
     var t = String(str).trim().replace(/\s/g, "");
     var mm;
-    if (t.indexOf(":") >= 0) {
-      mm = t.split(":");
+    if (t.indexOf(":") >= 0 || t.indexOf(".") >= 0) {
+      var sep = t.indexOf(":") >= 0 ? ":" : ".";
+      mm = t.split(sep);
       if (mm.length !== 2) return null;
-      var m = parseInt(mm[0], 10);
-      var s = parseInt(mm[1], 10);
-      if (isNaN(m) || isNaN(s) || s > 59) return null;
+      var m = parseInt(mm[0] || "0", 10);
+      var s = parseInt(mm[1] || "0", 10);
+      if (isNaN(m) || isNaN(s) || m < 0 || s < 0 || s > 59) return null;
       return m * 60 + s;
     }
     if (!/^\d+$/.test(t)) return null;
-    return parseInt(t, 10);
+    if (t.length <= 2) {
+      var secOnly = parseInt(t, 10);
+      return secOnly;
+    }
+    var mins = parseInt(t.slice(0, -2), 10);
+    var secs = parseInt(t.slice(-2), 10);
+    if (isNaN(mins) || isNaN(secs)) return null;
+    return mins * 60 + secs;
+  }
+
+  function formatDigitsAsMinSec(raw) {
+    var digits = String(raw || "").replace(/\D/g, "").replace(/^0+(?=\d)/, "");
+    if (!digits) return "";
+    digits = digits.slice(-4);
+    if (digits.length <= 2) {
+      return "0:" + (digits.length === 1 ? "0" + digits : digits);
+    }
+    var mins = digits.slice(0, -2);
+    var secs = digits.slice(-2);
+    return mins + ":" + secs;
+  }
+
+  function attachMinSecMask(inputEl) {
+    if (!inputEl || inputEl.dataset.minSecMasked) return;
+    inputEl.dataset.minSecMasked = "1";
+    inputEl.addEventListener("input", function () {
+      var formatted = formatDigitsAsMinSec(inputEl.value);
+      if (inputEl.value !== formatted) {
+        inputEl.value = formatted;
+      }
+    });
   }
 
   function esc(s) {
@@ -222,6 +253,7 @@
     schedules: [],
     posts: [],
     comments: [],
+    buddyFilter: "all",
     viewMonth: null,
     selected: todayKey(),
     openComments: {},
@@ -400,8 +432,7 @@
   async function saveScheduleRecord(payload, id) {
     if (useCloud()) {
       if (!sb) throw new Error("클라우드 연결이 준비되지 않았어요.");
-      var res = await sb.rpc("admin_upsert_schedule", {
-        p_pin: state.adminPin,
+      var res = await sb.rpc("upsert_schedule", {
         p_id: id || null,
         p_title: payload.title,
         p_class_date: payload.class_date,
@@ -432,10 +463,7 @@
 
   async function deleteScheduleRecord(id) {
     if (useCloud()) {
-      var res = await sb.rpc("admin_delete_schedule", {
-        p_pin: state.adminPin,
-        p_id: id
-      });
+      var res = await sb.rpc("delete_schedule", { p_id: id });
       if (res.error) throw res.error;
       await refreshSchedules();
     } else {
@@ -499,12 +527,20 @@
   }
 
   async function deletePostRecord(id) {
-    if (!state.isAdmin) throw new Error("관리자만 삭제할 수 있어요.");
+    var tok = getClientToken();
+    var target = state.posts.filter(function (p) { return p.id === id; })[0];
+    var isMine = !!(target && target.author_token && target.author_token === tok);
+    if (!isMine && !state.isAdmin) throw new Error("본인이 작성한 글만 삭제할 수 있어요.");
     if (useCloud()) {
-      var res = await sb.rpc("admin_delete_buddy_post", {
-        p_pin: state.adminPin,
-        p_id: id
-      });
+      var res;
+      if (isMine) {
+        res = await sb.rpc("delete_buddy_post", { p_id: id, p_token: tok });
+      } else {
+        res = await sb.rpc("admin_delete_buddy_post", {
+          p_pin: state.adminPin,
+          p_id: id
+        });
+      }
       if (res.error) throw res.error;
       await refreshPosts();
     } else {
@@ -1239,13 +1275,11 @@
       var color = LEVEL_COLORS[s.level] || LEVEL_COLORS["기타"];
       var time = s.start_time || "";
       if (s.end_time) time += " – " + s.end_time;
-      var actions = state.isAdmin
-        ? '<div class="event-actions">'
-          + '<button type="button" data-act="edit" data-id="' + esc(s.id) + '" aria-label="수업 수정"><svg><use href="#i-edit"/></svg></button>'
-          + '<button type="button" class="del" data-act="del" data-id="' + esc(s.id) + '" aria-label="수업 삭제"><svg><use href="#i-trash"/></svg></button>'
-          + '</div>'
-        : "";
-      return '<article class="event-card" data-id="' + esc(s.id) + '" style="--lv:' + color + (state.isAdmin ? ';cursor:pointer' : '') + '">'
+      var actions = '<div class="event-actions">'
+        + '<button type="button" data-act="edit" data-id="' + esc(s.id) + '" aria-label="수업 수정"><svg><use href="#i-edit"/></svg></button>'
+        + '<button type="button" class="del" data-act="del" data-id="' + esc(s.id) + '" aria-label="수업 삭제"><svg><use href="#i-trash"/></svg></button>'
+        + '</div>';
+      return '<article class="event-card" data-id="' + esc(s.id) + '" style="--lv:' + color + ';cursor:pointer">'
         + '<div class="event-top">'
         + '<h3 class="event-title">' + esc(s.title) + '</h3>'
         + actions
@@ -1262,7 +1296,7 @@
   }
 
   function renderScheduleChrome() {
-    addScheduleBtn.hidden = !state.isAdmin;
+    addScheduleBtn.hidden = false;
     var adminTopBtn = $("#adminOpenBtn");
     if (adminTopBtn) adminTopBtn.classList.toggle("is-admin", !!state.isAdmin);
     renderDay();
@@ -1287,7 +1321,6 @@
   var LEVELS = ["AIDA1", "AIDA2", "AIDA3", "AIDA4", "트레이닝", "자율연습", "투어", "기타"];
 
   function openScheduleForm(item) {
-    if (!state.isAdmin) { toast("관리자만 수업을 관리할 수 있어요."); return; }
     var isEdit = !!item;
     var s = item || {
       title: "", class_date: state.selected, start_time: "19:00", end_time: "21:00",
@@ -1400,8 +1433,16 @@
     var posts = state.posts.slice().sort(function (a, b) {
       return String(b.created_at).localeCompare(String(a.created_at));
     });
+    if (state.buddyFilter === "mine") {
+      posts = posts.filter(function (p) { return p.author_token && p.author_token === myTok; });
+    }
     $("#postCount").textContent = posts.length ? posts.length + "개" : "";
     $("#feedEmpty").hidden = posts.length > 0;
+    if (!posts.length) {
+      $("#feedEmpty").textContent = state.buddyFilter === "mine"
+        ? "아직 내가 작성한 글이 없어요."
+        : "아직 올라온 글이 없어요. 첫 번째 버디를 구해보세요.";
+    }
 
     postListEl.innerHTML = posts.map(function (p) {
       var comments = state.comments.filter(function (c) { return c.post_id === p.id; });
@@ -1444,9 +1485,7 @@
       if (isMine || state.isAdmin) {
         actionBtns = '<div class="post-actions">'
           + '<button type="button" class="post-edit" data-act="edit-post" data-id="' + esc(p.id) + '" aria-label="글 수정">수정</button>'
-          + (state.isAdmin
-            ? '<button type="button" class="post-del" data-act="del-post" data-id="' + esc(p.id) + '" aria-label="글 삭제"><svg><use href="#i-trash"/></svg></button>'
-            : "")
+          + '<button type="button" class="post-del" data-act="del-post" data-id="' + esc(p.id) + '" aria-label="글 삭제"><svg><use href="#i-trash"/></svg></button>'
           + '</div>';
       }
 
@@ -1458,7 +1497,7 @@
         + '<div class="post-top">'
         + avatarHtml
         + '<div class="post-who">'
-        + '<p class="post-name">' + esc(nick) + '</p>'
+        + '<p class="post-name"><button type="button" class="post-name-btn" data-act="full-nick" data-nick="' + esc(nick) + '" title="' + esc(nick) + '">' + esc(nick) + '</button></p>'
         + '<p class="post-time">' + esc(timeAgo(p.created_at)) + '</p>'
         + '</div>'
         + actionBtns
@@ -1796,9 +1835,7 @@
           + (st.delta > 0 ? "▲ " : "▼ ") + formatDiscDelta(d.code, st.delta) + '</span>';
       }
       var inputHtml = d.unit === "time"
-        ? '<input class="disc-num disc-num-sm" type="text" inputmode="numeric" maxlength="2" placeholder="분" data-disc-min="' + d.code + '" aria-label="' + d.code + ' 분">'
-          + '<span class="disc-unit">:</span>'
-          + '<input class="disc-num disc-num-sm" type="text" inputmode="numeric" maxlength="2" placeholder="초" data-disc-sec="' + d.code + '" aria-label="' + d.code + ' 초">'
+        ? '<input class="disc-num" type="text" inputmode="numeric" maxlength="5" placeholder="1:15" data-disc-time="' + d.code + '" aria-label="' + d.code + ' 시간 (예: 115 → 1:15)">'
         : '<input class="disc-num" type="text" inputmode="decimal" maxlength="6" placeholder="0" data-disc-num="' + d.code + '" aria-label="' + d.code + ' 기록">'
           + '<span class="disc-unit">m</span>';
 
@@ -1816,6 +1853,7 @@
         + '</div>'
         + '</div>';
     }).join("");
+    $$("[data-disc-time]", wrap).forEach(attachMinSecMask);
   }
 
   function renderLogbook() {
@@ -1972,36 +2010,40 @@
     }
 
     var discWrap = $("#disciplineRows");
+    function readDiscRowValue(code) {
+      var d = findDisc(code);
+      if (d.unit === "time") {
+        var timeEl = discWrap && discWrap.querySelector('[data-disc-time="' + code + '"]');
+        var rawT = (timeEl && timeEl.value || "").trim();
+        if (!rawT) return { empty: true };
+        var parsedT = parseTimeInput(rawT);
+        if (parsedT === null || parsedT <= 0) return { invalid: true, msg: code + " 시간을 올바르게 입력해 주세요. (예: 115 → 1:15)" };
+        return { value: parsedT, clear: function () { if (timeEl) timeEl.value = ""; } };
+      } else {
+        var numEl = discWrap && discWrap.querySelector('[data-disc-num="' + code + '"]');
+        var raw = (numEl && numEl.value || "").trim().replace(/,/g, ".");
+        if (!raw) return { empty: true };
+        var num = parseFloat(raw);
+        if (isNaN(num) || num <= 0) return { invalid: true, msg: code + " 숫자를 0보다 크게 입력해 주세요." };
+        return { value: Math.round(num * 10) / 10, clear: function () { if (numEl) numEl.value = ""; } };
+      }
+    }
+
     if (discWrap) {
       discWrap.addEventListener("click", function (ev) {
         var btn = ev.target.closest("[data-disc-save]");
         if (!btn) return;
         var code = btn.getAttribute("data-disc-save");
-        var d = findDisc(code);
-        var val = null;
-        if (d.unit === "time") {
-          var minEl = discWrap.querySelector('[data-disc-min="' + code + '"]');
-          var secEl = discWrap.querySelector('[data-disc-sec="' + code + '"]');
-          var mins = parseInt((minEl && minEl.value || "0").trim(), 10) || 0;
-          var secs = parseInt((secEl && secEl.value || "0").trim(), 10) || 0;
-          if (mins < 0 || secs < 0 || secs > 59 || (mins === 0 && secs === 0)) {
-            toast("분과 초를 올바르게 입력해 주세요.");
-            return;
-          }
-          val = mins * 60 + secs;
-          if (minEl) minEl.value = "";
-          if (secEl) secEl.value = "";
-        } else {
-          var numEl = discWrap.querySelector('[data-disc-num="' + code + '"]');
-          var raw = (numEl && numEl.value || "").trim().replace(/,/g, ".");
-          var num = parseFloat(raw);
-          if (isNaN(num) || num <= 0) {
-            toast("0보다 큰 숫자를 입력해 주세요.");
-            return;
-          }
-          val = Math.round(num * 10) / 10;
-          if (numEl) numEl.value = "";
+        var res = readDiscRowValue(code);
+        if (res.empty) {
+          toast("기록을 입력해 주세요.");
+          return;
         }
+        if (res.invalid) {
+          toast(res.msg);
+          return;
+        }
+        res.clear();
         var dateEl = $("#logDateInput");
         var memoEl = $("#logMemoInput");
         var dateVal = (dateEl && dateEl.value) ? dateEl.value : todayKey();
@@ -2009,7 +2051,7 @@
         state.logbook.push({
           id: uid(),
           disc: code,
-          value: val,
+          value: res.value,
           date: dateVal,
           memo: memoVal,
           createdAt: Date.now()
@@ -2017,7 +2059,48 @@
         saveLogbook();
         if (memoEl) memoEl.value = "";
         renderHome();
-        toast(code + " " + formatDiscVal(code, val) + " 기록했어요!");
+        toast(code + " " + formatDiscVal(code, res.value) + " 기록했어요!");
+      });
+    }
+
+    var saveAllDiscBtn = $("#saveAllDiscBtn");
+    if (saveAllDiscBtn && discWrap) {
+      saveAllDiscBtn.addEventListener("click", function () {
+        var dateEl = $("#logDateInput");
+        var memoEl = $("#logMemoInput");
+        var dateVal = (dateEl && dateEl.value) ? dateEl.value : todayKey();
+        var memoVal = memoEl ? memoEl.value.trim() : "";
+        var toSave = [];
+        for (var i = 0; i < DISCIPLINES.length; i++) {
+          var d = DISCIPLINES[i];
+          var res = readDiscRowValue(d.code);
+          if (res.empty) continue;
+          if (res.invalid) {
+            toast(res.msg);
+            return;
+          }
+          toSave.push({ code: d.code, value: res.value, clear: res.clear });
+        }
+        if (!toSave.length) {
+          toast("저장할 기록을 하나 이상 입력해 주세요.");
+          return;
+        }
+        var now = Date.now();
+        toSave.forEach(function (item, idx) {
+          item.clear();
+          state.logbook.push({
+            id: uid(),
+            disc: item.code,
+            value: item.value,
+            date: dateVal,
+            memo: memoVal,
+            createdAt: now + idx
+          });
+        });
+        saveLogbook();
+        if (memoEl) memoEl.value = "";
+        renderHome();
+        toast(toSave.length + "개 종목 기록을 모두 저장했어요!");
       });
     }
 
@@ -2083,6 +2166,7 @@
         settingsToggleBtn.setAttribute("aria-expanded", open ? "true" : "false");
       });
     }
+    attachMinSecMask(pbInputEl);
     pbInputEl.addEventListener("keydown", function (e) {
       if (e.key === "Enter") { e.preventDefault(); $("#pbSaveBtn").click(); }
     });
@@ -2129,6 +2213,82 @@
       });
     });
 
+    // 테이블 설정 숫자 직접 클릭해서 수정
+    var tableSettingsEl = $("#tableSettings");
+    if (tableSettingsEl) {
+      function openSettingInlineEdit(outEl) {
+        if (!outEl || tableSettingsEl.querySelector(".step-inline-input")) return;
+        var key = outEl.getAttribute("data-edit-setting");
+        var s = currentSettings();
+        var isTime = (key === "restStart" || key === "stepSec");
+        var input = document.createElement("input");
+        input.type = "text";
+        input.inputMode = "numeric";
+        input.className = "step-inline-input";
+        if (key === "rounds") input.value = String(s.customRows ? s.customRows.length : s.rounds);
+        else if (key === "holdPct") input.value = String(s.holdPct);
+        else if (key === "restStart") { input.value = fmt(s.restStart); attachMinSecMask(input); }
+        else if (key === "stepSec") { input.value = fmt(s.stepSec); attachMinSecMask(input); }
+
+        outEl.hidden = true;
+        outEl.parentNode.insertBefore(input, outEl.nextSibling);
+        input.focus();
+        input.select();
+
+        var done = false;
+        function commit(save) {
+          if (done) return;
+          done = true;
+          if (save) {
+            if (isTime) {
+              var parsedT = parseTimeInput(input.value);
+              if (parsedT === null) {
+                toast("예: 115 → 1:15 형식으로 입력해 주세요.");
+              } else {
+                s.customRows = null;
+                if (key === "restStart") s.restStart = clamp(parsedT, 30, 300);
+                if (key === "stepSec") s.stepSec = clamp(parsedT, state.tableType === "co2" ? 0 : 5, 45);
+                savePrefs();
+              }
+            } else {
+              var num = parseInt(String(input.value || "").replace(/\D/g, ""), 10);
+              if (!isNaN(num)) {
+                if (key === "rounds") {
+                  var nextRounds = clamp(num, 3, 15);
+                  s.rounds = nextRounds;
+                  if (s.customRows && s.customRows.length) {
+                    if (nextRounds < s.customRows.length) s.customRows = s.customRows.slice(0, nextRounds);
+                    else while (s.customRows.length < nextRounds) {
+                      var last = s.customRows[s.customRows.length - 1];
+                      s.customRows.push({ hold: last.hold, rest: last.rest });
+                    }
+                  }
+                } else if (key === "holdPct") {
+                  s.customRows = null;
+                  s.holdPct = clamp(num, 30, 90);
+                }
+                savePrefs();
+              }
+            }
+          }
+          if (input.parentNode) input.parentNode.removeChild(input);
+          outEl.hidden = false;
+          renderBreath();
+        }
+
+        input.addEventListener("keydown", function (ev) {
+          if (ev.key === "Enter") { ev.preventDefault(); commit(true); }
+          else if (ev.key === "Escape") { ev.preventDefault(); commit(false); }
+        });
+        input.addEventListener("blur", function () { commit(true); });
+      }
+
+      tableSettingsEl.addEventListener("click", function (e) {
+        var outEl = e.target.closest("[data-edit-setting]");
+        if (outEl) openSettingInlineEdit(outEl);
+      });
+    }
+
     // 테이블 숫자 직접 클릭해서 수정
     tablePreviewEl.addEventListener("click", function (e) {
       var btn = e.target.closest(".cell-btn");
@@ -2145,6 +2305,7 @@
       input.className = "cell-input";
       input.value = fmt(curSec);
       input.setAttribute("aria-label", (idx + 1) + "라운드 " + (field === "hold" ? "Apnea Training" : "휴식") + " 시간");
+      attachMinSecMask(input);
       btn.replaceWith(input);
       input.focus();
       input.select();
@@ -2316,7 +2477,6 @@
         }
         return;
       }
-      if (!state.isAdmin) return;
       var card = e.target.closest(".event-card[data-id]");
       if (!card) return;
       var cardId = card.getAttribute("data-id");
@@ -2580,6 +2740,11 @@
       var act = btn.getAttribute("data-act");
       var id = btn.getAttribute("data-id");
 
+      if (act === "full-nick") {
+        btn.classList.toggle("is-expanded");
+        return;
+      }
+
       if (act === "toggle") {
         state.openComments[id] = !state.openComments[id];
         renderPosts();
@@ -2642,6 +2807,21 @@
       }
     });
 
+    var buddyFilterSeg = $("#buddyFilterSeg");
+    if (buddyFilterSeg) {
+      buddyFilterSeg.addEventListener("click", function (e) {
+        var btn = e.target.closest("[data-buddy-filter]");
+        if (!btn) return;
+        state.buddyFilter = btn.getAttribute("data-buddy-filter");
+        $$(".buddy-filter-btn", buddyFilterSeg).forEach(function (b) {
+          var on = b === btn;
+          b.classList.toggle("is-active", on);
+          b.setAttribute("aria-selected", on ? "true" : "false");
+        });
+        renderPosts();
+      });
+    }
+
     $("#refreshPostsBtn").addEventListener("click", async function () {
       try {
         await refreshPosts();
@@ -2652,10 +2832,45 @@
     });
 
     $("#photoLightbox").addEventListener("click", function (e) {
-      if (e.target.id === "photoLightbox" || e.target.closest("#lightboxClose")) {
+      if (e.target.id === "photoLightbox" || e.target.id === "lightboxImg" || e.target.closest("#lightboxClose")) {
         $("#photoLightbox").hidden = true;
       }
     });
+
+    // 가상 키보드 높이 및 입력 포커스 위치 자동 보정
+    (function setupKeyboardViewport() {
+      var root = document.documentElement;
+      function updateVV() {
+        var vv = window.visualViewport;
+        if (!vv) return;
+        var kb = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
+        root.style.setProperty("--kb-offset", kb + "px");
+        root.style.setProperty("--vv-height", Math.round(vv.height) + "px");
+      }
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener("resize", updateVV);
+        window.visualViewport.addEventListener("scroll", updateVV);
+        updateVV();
+      }
+      function ensureVisible(target) {
+        if (!target || !target.matches("input, textarea, select")) return;
+        setTimeout(function () {
+          try {
+            target.scrollIntoView({ block: "center", behavior: "smooth" });
+          } catch (e) { /* ignore */ }
+        }, 120);
+      }
+      document.addEventListener("focusin", function (e) { ensureVisible(e.target); });
+      document.addEventListener("input", function (e) {
+        if (e.target && e.target.matches("textarea, input")) {
+          var rect = e.target.getBoundingClientRect();
+          var vh = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+          if (rect.bottom > vh - 16 || rect.top < 56) {
+            ensureVisible(e.target);
+          }
+        }
+      });
+    })();
 
     // 관리자
     $("#adminOpenBtn").addEventListener("click", openAdminSheet);
