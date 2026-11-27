@@ -8,7 +8,7 @@
 <meta name="theme-color" content="#0e1116">
 <meta name="color-scheme" content="dark">
 <meta name="format-detection" content="telephone=no">
-<link rel="manifest" href="./manifest.webmanifest?v=1.4.3">
+<link rel="manifest" href="./manifest.webmanifest?v=1.4.4">
 <link rel="icon" href="./icons/favicon-32.png" sizes="32x32" type="image/png">
 <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
 <link rel="apple-touch-startup-image" href="./icons/splash-1170x2532.png" media="(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3)">
@@ -21,7 +21,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="선데이">
-<link rel="stylesheet" href="./styles.css?v=1.4.3">
+<link rel="stylesheet" href="./styles.css?v=1.4.4">
 </head>
 <body>
 
@@ -142,7 +142,7 @@
 <div class="app" id="app">
   <header class="topbar">
     <div class="brand">
-      <span class="brand-mark" aria-hidden="true"><img src="./icons/brand-logo.png?v=1.4.3" alt=""></span>
+      <span class="brand-mark" aria-hidden="true"><img src="./icons/brand-logo.png?v=1.4.4" alt=""></span>
       <span class="brand-text">
         <strong>선데이프리다이빙</strong>
         <span class="brand-sub">
@@ -156,9 +156,6 @@
       <button type="button" class="icon-btn account-top-btn" id="accountOpenBtn" aria-label="로그인 · 기기 동기화" title="로그인 · 기기 동기화">
         <svg><use href="#i-account"/></svg>
         <span class="account-dot" id="accountDot" hidden></span>
-      </button>
-      <button class="icon-btn admin-top-btn" id="adminOpenBtn" aria-label="관리자 설정" title="관리자 설정" hidden>
-        <svg><use href="#i-admin"/></svg>
       </button>
     </div>
   </header>
@@ -367,6 +364,15 @@
           </button>
         </div>
         <p class="view-desc">이번 달 일정을 한눈에.</p>
+      </div>
+
+      <div class="card monthly-training-card" id="monthlyTrainingCard">
+        <div class="mt-head">
+          <h2 class="mt-title">이 달의 정기트레이닝</h2>
+          <span class="mt-month" id="mtMonthLabel"></span>
+        </div>
+        <ul class="mt-list" id="mtList"></ul>
+        <p class="mt-empty" id="mtEmpty" hidden>이 달에는 정기트레이닝이 없어요.</p>
       </div>
 
       <div class="card calendar-card">
@@ -692,7 +698,7 @@
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-<script src="./config.js?v=1.4.3"></script>
-<script src="./app.js?v=1.4.3"></script>
+<script src="./config.js?v=1.4.4"></script>
+<script src="./app.js?v=1.4.4"></script>
 </body>
 </html>
