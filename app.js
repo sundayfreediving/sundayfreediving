@@ -3775,6 +3775,9 @@
     demoPhase: 0,
     writers: [],
     writeTarget: "",
+    writeMode: "auto",
+    scan: null,
+    lastHit: null,
     auto: null
   };
 
@@ -3783,12 +3786,13 @@
     if (!saved || typeof saved !== "object") return;
     if (EQ_UNITS.indexOf(saved.unit) >= 0) eq.unit = saved.unit;
     if (saved.parseMode) eq.parseMode = saved.parseMode;
+    if (saved.writeMode === "nr" || saved.writeMode === "resp") eq.writeMode = saved.writeMode;
     var sc = Number(saved.scale);
     if (sc > 0) eq.scale = sc;
   }
 
   function eqSavePrefs() {
-    pSet(EQ_STORE, { unit: eq.unit, parseMode: eq.parseMode, scale: eq.scale });
+    pSet(EQ_STORE, { unit: eq.unit, parseMode: eq.parseMode, scale: eq.scale, writeMode: eq.writeMode });
   }
 
   function eqClock(ms) {
@@ -3960,8 +3964,11 @@
     if (!bytes.length) return;
     eq.packets++;
     eq.lastAt = Date.now();
-    // 자동 신호 탐색 중에 첫 수신 패킷이 오면 바로 멈춥니다.
-    if (kind !== "READ" && eq.auto) eqAutoReact();
+    // 스캔·자동 탐색 중에 첫 수신 패킷이 오면 반응한 신호로 보고 바로 멈춥니다.
+    if (kind !== "READ") {
+      if (eq.scan) eqScanReact(uuid);
+      else if (eq.auto) eqAutoReact();
+    }
     var cands = eqCandidates(bytes, dv);
     eq.lastCands = cands;
     var pick = eqPickValue(cands, eq.parseMode);
@@ -4142,50 +4149,55 @@
     return eq.writers[0];
   }
 
-  async function eqSendBytes(bytes, label) {
+  async function eqSendBytes(bytes, label, opts) {
+    var quiet = !!(opts && opts.quiet);
     if (!bytes || !bytes.length) {
-      toast("보낼 데이터가 없어요");
+      if (!quiet) toast("보낼 데이터가 없어요");
       return false;
     }
     if (!eqIsConnected()) {
-      toast("먼저 압력계에 연결해 주세요");
+      if (!quiet) toast("먼저 압력계에 연결해 주세요");
       return false;
     }
     var w = eqPickWriter();
     if (!w) {
-      toast("쓰기 가능한 특성을 찾지 못했어요");
+      if (!quiet) toast("쓰기 가능한 특성을 찾지 못했어요");
       return false;
     }
     var hex = eqHex(bytes);
     var ascii = eqAscii(bytes);
     var info = label ? "「" + label + "」 " + bytes.length + "B" : bytes.length + "B";
-    var tries = [];
-    if (w.writeNR && typeof w.ch.writeValueWithoutResponse === "function") {
-      tries.push({ name: "writeNR", call: function () { return w.ch.writeValueWithoutResponse(bytes); } });
-    }
-    if (w.write && typeof w.ch.writeValueWithResponse === "function") {
-      tries.push({ name: "writeResp", call: function () { return w.ch.writeValueWithResponse(bytes); } });
-    }
-    if (typeof w.ch.writeValue === "function") {
-      tries.push({ name: "write", call: function () { return w.ch.writeValue(bytes); } });
-    }
+    var nr = (w.writeNR && typeof w.ch.writeValueWithoutResponse === "function")
+      ? { name: "writeNR", call: function () { return w.ch.writeValueWithoutResponse(bytes); } } : null;
+    var rsp = (w.write && typeof w.ch.writeValueWithResponse === "function")
+      ? { name: "writeResp", call: function () { return w.ch.writeValueWithResponse(bytes); } } : null;
+    var plain = (typeof w.ch.writeValue === "function")
+      ? { name: "write", call: function () { return w.ch.writeValue(bytes); } } : null;
+    var mode = eq.writeMode || "auto";
+    var order = mode === "resp" ? [rsp, nr, plain] : mode === "nr" ? [nr, rsp, plain] : [nr, rsp, plain];
+    var tries = order.filter(Boolean);
     if (!tries.length) {
       eqLogLine("ERR", "전송 실패", eqShortUuid(w.uuid) + " · 쓰기 메서드 없음", hex, ascii, info);
-      toast("이 특성으로는 보낼 수 없어요");
+      if (!quiet) toast("이 특성으로는 보낼 수 없어요");
       return false;
+    }
+    if (!quiet && mode === "resp" && !rsp) {
+      eqLogLine("TX", "안내", eqShortUuid(w.uuid) + " · writeResp 미지원 → 다른 방식으로 보냅니다");
+    } else if (!quiet && mode === "nr" && !nr) {
+      eqLogLine("TX", "안내", eqShortUuid(w.uuid) + " · writeNR 미지원 → 다른 방식으로 보냅니다");
     }
     var lastErr = null;
     for (var i = 0; i < tries.length; i++) {
       try {
         await tries[i].call();
-        eqLogLine("TX", "전송", eqShortUuid(w.uuid) + " · " + tries[i].name, hex, ascii, info);
+        if (!quiet) eqLogLine("TX", "전송", eqShortUuid(w.uuid) + " · " + tries[i].name, hex, ascii, info);
         return true;
       } catch (err) {
         lastErr = err;
         eqLogLine("ERR", "전송 실패", eqShortUuid(w.uuid) + " · " + tries[i].name + " · " + (err && err.message || err), hex, ascii, info);
       }
     }
-    toast("명령을 보내지 못했어요: " + (lastErr && lastErr.message || lastErr));
+    if (!quiet) toast("명령을 보내지 못했어요: " + (lastErr && lastErr.message || lastErr));
     return false;
   }
 
@@ -4250,7 +4262,7 @@
     sel.textContent = "";
     var autoOpt = document.createElement("option");
     autoOpt.value = "";
-    autoOpt.textContent = "자동 (writeNR 우선)";
+    autoOpt.textContent = "자동 (목록 첫 특성)";
     sel.appendChild(autoOpt);
     eq.writers.forEach(function (w) {
       var o = document.createElement("option");
@@ -4291,6 +4303,18 @@
       autoBtn.classList.toggle("is-on", running);
       autoBtn.disabled = !can && !running;
     }
+    var scanning = !!eq.scan;
+    ["#eqScanLowBtn", "#eqScanHighBtn", "#eqScanPresetBtn"].forEach(function (sel) {
+      var b = $(sel);
+      if (!b) return;
+      var id = sel.replace("#eqScan", "").replace("Btn", "").toLowerCase();
+      var mine = scanning && eq.scan.kind === id;
+      b.classList.toggle("is-on", mine);
+      b.textContent = mine ? "■ 중지" : (id === "low" ? "전반 0x00~7F" : id === "high" ? "후반 0x80~FF" : "확장 프리셋");
+      b.disabled = !can && !scanning;
+    });
+    var methodSel = $("#eqWriteMethodSel");
+    if (methodSel && methodSel.value !== (eq.writeMode || "auto")) methodSel.value = eq.writeMode || "auto";
     eqRenderWriteTargets();
   }
 
@@ -4317,6 +4341,7 @@
       toast("쓰기 가능한 특성을 찾지 못했어요");
       return;
     }
+    if (eq.scan) eqScanStop(null);
     eq.auto = { i: 0, lastLabel: "", lastPackets: eq.packets, timer: null };
     eqLogLine("AUTO", "탐색", "프리셋 " + EQ_WRITE_PRESETS.length + "개를 " + EQ_AUTO_INTERVAL + "ms 간격으로 보냅니다");
     eqSyncWriteUI();
@@ -4360,6 +4385,204 @@
       toast("자동 신호 탐색 · " + reason);
     }
     eqSyncWriteUI();
+  }
+
+  // ---------- 1바이트 전체 신호 스캔 (v1.4.3) ----------
+  // EZEQ2가 데이터를 약 9.6초 만에 끊기 때문에 스캔은 4~4.5초 안에 끝나야 합니다.
+  // 128개 × 32ms ≈ 4.1초. 전송 한 번이 늦어 지연되면 다음 전송을 당겨 간격을 맞춥니다.
+  var EQ_SCAN_BYTE_GAP = 32;
+  var EQ_SCAN_PRESET_GAP = 200;
+  var EQ_SCAN_TAIL = 1500;   // 전송이 끝난 뒤 늦게 오는 반응을 잡는 여운 감시
+  var EQ_SCAN_RECENT = 4;
+
+  var EQ_SCAN_PRESETS = [
+    { label: "START", kind: "ascii", text: "START" },
+    { label: "start", kind: "ascii", text: "start" },
+    { label: "STOP", kind: "ascii", text: "STOP" },
+    { label: "EZEQ", kind: "ascii", text: "EZEQ" },
+    { label: "GET", kind: "ascii", text: "GET" },
+    { label: "READ", kind: "ascii", text: "READ" },
+    { label: "OK", kind: "ascii", text: "OK" },
+    { label: "00", kind: "hex", text: "00" },
+    { label: "02", kind: "hex", text: "02" },
+    { label: "03", kind: "hex", text: "03" },
+    { label: "05", kind: "hex", text: "05" },
+    { label: "10", kind: "hex", text: "10" },
+    { label: "20", kind: "hex", text: "20" },
+    { label: "55 AA", kind: "hex", text: "55 AA" },
+    { label: "AA 55", kind: "hex", text: "AA 55" },
+    { label: "AA 00", kind: "hex", text: "AA 00" },
+    { label: "A5 5A", kind: "hex", text: "A5 5A" },
+    { label: "FE 01", kind: "hex", text: "FE 01" },
+    { label: "FF 01", kind: "hex", text: "FF 01" },
+    { label: "02 01 00", kind: "hex", text: "02 01 00" }
+  ];
+
+  function eqHexByte(b) {
+    return "0x" + ("0" + b.toString(16)).slice(-2).toUpperCase();
+  }
+
+  function eqWriteModeLabel() {
+    if (eq.writeMode === "nr") return "writeNR 강제";
+    if (eq.writeMode === "resp") return "writeResp 강제";
+    return "자동( writeNR → writeResp )";
+  }
+
+  function eqScanItems(kind) {
+    if (kind === "low" || kind === "high") {
+      var from = kind === "low" ? 0x00 : 0x80;
+      var out = [];
+      for (var b = from; b < from + 128; b++) out.push({ label: eqHexByte(b), bytes: new Uint8Array([b]) });
+      return out;
+    }
+    return EQ_SCAN_PRESETS.map(function (pr) {
+      var bytes = eqPresetBytes(pr);
+      return { label: pr.label + (pr.kind === "ascii" ? " (ASCII)" : ""), bytes: bytes };
+    }).filter(function (it) { return it.bytes && it.bytes.length; });
+  }
+
+  function eqScanStatus(text, isHit) {
+    var el = $("#eqScanStatus");
+    if (!el) return;
+    el.textContent = text;
+    el.classList.toggle("is-hit", !!isHit);
+  }
+
+  function eqScanStart(kind) {
+    if (eq.scan) {
+      eqScanStop("사용자가 멈췄습니다");
+      return;
+    }
+    if (!eqIsConnected()) {
+      toast("먼저 압력계에 연결해 주세요");
+      return;
+    }
+    if (!eqPickWriter()) {
+      toast("쓰기 가능한 특성을 찾지 못했어요");
+      return;
+    }
+    if (eq.auto) eqAutoStop(null);
+    var items = eqScanItems(kind);
+    if (!items.length) {
+      toast("보낼 신호가 없어요");
+      return;
+    }
+    var gap = kind === "preset" ? EQ_SCAN_PRESET_GAP : EQ_SCAN_BYTE_GAP;
+    var name = kind === "low" ? "전반 스캔 0x00~0x7F" : kind === "high" ? "후반 스캔 0x80~0xFF" : "확장 프리셋 스캔";
+    eq.scan = {
+      kind: kind,
+      name: name,
+      items: items,
+      i: 0,
+      gap: gap,
+      phase: "send",
+      timer: null,
+      tailTimer: null,
+      recent: [],
+      lastLabel: "",
+      lastBytes: null,
+      startedAt: Date.now()
+    };
+    eq.lastHit = null;
+    var retry = $("#eqScanRetryBtn");
+    if (retry) retry.hidden = true;
+    eqOpenLogBody();
+    eqLogLine("AUTO", "스캔 시작", name + " · " + items.length + "개 · " + gap + "ms · " + eqWriteModeLabel());
+    eqScanStatus(name + " 준비 중…", false);
+    eqSyncWriteUI();
+    eqScanStep();
+  }
+
+  function eqScanStep() {
+    var s = eq.scan;
+    if (!s) return;
+    if (!eqIsConnected()) {
+      eqScanStop("연결이 끊겼습니다");
+      return;
+    }
+    if (s.i >= s.items.length) {
+      eqScanTail();
+      return;
+    }
+    var item = s.items[s.i];
+    var due = s.startedAt + (s.i + 1) * s.gap;
+    s.i++;
+    s.lastLabel = item.label;
+    s.lastBytes = item.bytes;
+    s.recent.push(item.label);
+    if (s.recent.length > EQ_SCAN_RECENT) s.recent.shift();
+    if (s.i === 1 || s.i % 8 === 0) {
+      eqScanStatus(s.name + " · " + s.i + "/" + s.items.length + " · " + item.label, false);
+    }
+    eqSendBytes(item.bytes, item.label, { quiet: true }).then(function () {
+      var cur = eq.scan;
+      if (!cur || cur !== s) return;
+      var wait = Math.max(6, due - Date.now());
+      cur.timer = setTimeout(eqScanStep, wait);
+    }, function () {
+      var cur = eq.scan;
+      if (!cur || cur !== s) return;
+      cur.timer = setTimeout(eqScanStep, Math.max(6, s.gap));
+    });
+  }
+
+  // 전송이 끝난 뒤 짧게 반응을 더 기다립니다 (응답이 늦게 오는 기기를 위해).
+  function eqScanTail() {
+    var s = eq.scan;
+    if (!s) return;
+    s.phase = "tail";
+    var took = ((Date.now() - s.startedAt) / 1000).toFixed(1);
+    eqScanStatus(s.name + " · " + took + "초 · 늦은 반응 " + (EQ_SCAN_TAIL / 1000) + "초 대기", false);
+    s.tailTimer = setTimeout(function () {
+      var cur = eq.scan;
+      if (!cur || cur !== s) return;
+      eqScanStop("반응한 신호가 없습니다 · " + ((Date.now() - s.startedAt) / 1000).toFixed(1) + "초");
+    }, EQ_SCAN_TAIL);
+  }
+
+  function eqScanReact(uuid) {
+    var s = eq.scan;
+    if (!s) return;
+    if (String(uuid || "").indexOf("demo-") === 0) return;
+    var label = s.lastLabel || "?";
+    var before = s.recent.slice(0, s.recent.length - 1);
+    var secs = ((Date.now() - s.startedAt) / 1000).toFixed(2);
+    var late = s.phase === "tail" ? " · 스캔 종료 후 늦게 도착" : "";
+    eq.lastHit = { label: label, bytes: s.lastBytes };
+    eqLogLine("AUTO", "반응", "「" + label + "」 신호에 데이터가 들어왔습니다 · " + secs + "초" + late +
+      (before.length ? " · 직전 " + before.join(" → ") : ""),
+      eqHex(s.lastBytes || new Uint8Array(0)));
+    toast("반응한 신호 · " + label);
+    eqScanStatus("반응 신호: " + label + " · " + secs + "초" + late, true);
+    eqScanStop(null);
+    var retry = $("#eqScanRetryBtn");
+    if (retry) {
+      retry.hidden = false;
+      retry.textContent = "「" + label + "」 다시 보내기";
+    }
+  }
+
+  function eqScanStop(reason) {
+    var s = eq.scan;
+    if (!s) return;
+    if (s.timer) clearTimeout(s.timer);
+    if (s.tailTimer) clearTimeout(s.tailTimer);
+    eq.scan = null;
+    if (reason) {
+      eqLogLine("AUTO", "정지", s.name + " · " + reason);
+      toast(s.name + " · " + reason);
+      eqScanStatus(s.name + " · " + reason, false);
+    }
+    eqSyncWriteUI();
+  }
+
+  function eqScanRetryHit() {
+    var hit = eq.lastHit;
+    if (!hit || !hit.bytes) {
+      toast("다시 보낼 반응 신호가 없어요");
+      return;
+    }
+    eqSendBytes(hit.bytes, hit.label);
   }
 
   // ---------- 연결 ----------
@@ -4406,11 +4629,15 @@
     if (dis) dis.hidden = true;
     eq.writers = [];
     eq.writeTarget = "";
+    eq.lastHit = null;
+    var retryBtn = $("#eqScanRetryBtn");
+    if (retryBtn) retryBtn.hidden = true;
     eqSyncWriteUI();
   }
 
   function eqOnGattDisconnected() {
     if (eq.manualClose) { eq.manualClose = false; return; }
+    if (eq.scan) eqScanStop("연결이 끊겼습니다");
     if (eq.auto) eqAutoStop("연결이 끊겼습니다");
     eqLogLine("SYS", "해제", "기기와의 연결이 끊어졌습니다");
     eqResetConnectionUI();
@@ -4550,6 +4777,9 @@
       eq.chars = [];
       eq.writers = [];
       eq.writeTarget = "";
+      eq.lastHit = null;
+      var retryReset = $("#eqScanRetryBtn");
+      if (retryReset) retryReset.hidden = true;
       eq.hasNotify = false;
       eq.lastRead = null;
       device.addEventListener("gattserverdisconnected", eqOnGattDisconnected);
@@ -4573,6 +4803,7 @@
 
   function eqDisconnect(manual) {
     eqStopDemo();
+    eqScanStop(null);
     eqAutoStop("연결을 해제했습니다");
     eq.manualClose = !!manual;
     try {
@@ -4747,6 +4978,25 @@
     });
     var autoBtn = $("#eqAutoBtn");
     if (autoBtn) autoBtn.addEventListener("click", eqAutoStart);
+    var methodSel = $("#eqWriteMethodSel");
+    if (methodSel) {
+      methodSel.value = eq.writeMode || "auto";
+      methodSel.addEventListener("change", function () {
+        var v = methodSel.value;
+        eq.writeMode = v === "nr" || v === "resp" ? v : "auto";
+        eqSavePrefs();
+        eqSyncWriteUI();
+        toast("전송 방식 · " + eqWriteModeLabel());
+      });
+    }
+    var scanLowBtn = $("#eqScanLowBtn");
+    if (scanLowBtn) scanLowBtn.addEventListener("click", function () { eqScanStart("low"); });
+    var scanHighBtn = $("#eqScanHighBtn");
+    if (scanHighBtn) scanHighBtn.addEventListener("click", function () { eqScanStart("high"); });
+    var scanPresetBtn = $("#eqScanPresetBtn");
+    if (scanPresetBtn) scanPresetBtn.addEventListener("click", function () { eqScanStart("preset"); });
+    var scanRetryBtn = $("#eqScanRetryBtn");
+    if (scanRetryBtn) scanRetryBtn.addEventListener("click", eqScanRetryHit);
     eqSyncWriteUI();
     var copyLinkBtn = $("#eqCopyLinkBtn");
     if (copyLinkBtn) copyLinkBtn.addEventListener("click", function () {
