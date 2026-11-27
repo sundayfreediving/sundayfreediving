@@ -561,15 +561,26 @@
       var localAt = metaAt(key);
 
       if (key === "sfd.history" || key === "sfd.logbook") {
-        var localList = localValueFor(key);
-        var remoteList = Array.isArray(row.value) ? row.value : [];
-        var merged = unionRecords(key, localList, remoteList);
-        var localCount = Array.isArray(localList) ? localList.length : 0;
-        var lost = merged.list.length !== localCount;
-        if (merged.addedFromRemote || lost) {
-          lsSet(key, merged.list);
-          setMeta(key, Date.now(), true);
+        if (adoptLocal) {
+          // 처음 로그인: 이 기기에서 쓰던 기록 + 클라우드 기록을 합칩니다 (유실 방지)
+          var localList = localValueFor(key);
+          var remoteList = Array.isArray(row.value) ? row.value : [];
+          var merged = unionRecords(key, localList, remoteList);
+          var mergedIds = merged.list.map(recordKeyOf).sort().join(",");
+          var remoteIds = sortRecords(key, remoteList.slice()).map(recordKeyOf).sort().join(",");
+          if (mergedIds !== remoteIds) {
+            lsSet(key, merged.list);
+            setMeta(key, Date.now(), true);
+            changed++;
+            await pushKey(key);
+          }
+          continue;
+        }
+        // 이후: 더 최근에 바뀐 목록을 따릅니다 (삭제도 함께 반영)
+        if (remoteAt > localAt) {
+          applyRemoteRow(key, row.value, remoteAt);
           changed++;
+        } else if (localAt > remoteAt) {
           await pushKey(key);
         }
         continue;
