@@ -14,5 +14,5 @@ window.SFD_CONFIG = {
   // 관리자(김병선 대표) 계정 — 이 이메일로 로그인하면 자동으로 관리자 모드가 됩니다.
   ADMIN_EMAIL: "sundayfreediving@gmail.com",
 
-  APP_VERSION: "1.4.4"
+  APP_VERSION: "1.4.5"
 };

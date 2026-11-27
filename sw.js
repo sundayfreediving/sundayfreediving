@@ -3,7 +3,7 @@
    · 오프라인일 때만 캐시로 대체
    · 아이콘·이미지는 캐시 우선
 */
-const VERSION = "1.4.4";
+const VERSION = "1.4.5";
 const CACHE_NAME = "sunday-freediving-" + VERSION;
 
 const APP_SHELL = [

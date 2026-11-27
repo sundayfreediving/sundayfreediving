@@ -137,6 +137,27 @@
     return (d.getMonth() + 1) + "/" + d.getDate() + " (" + WEEK[d.getDay()] + ")";
   }
 
+  // '이 달의 정기트레이닝' 한 줄 표기용 — 공백 없이 11/27(금)
+  function mtShortDate(key) {
+    if (!key) return "";
+    var d = keyToDate(key);
+    if (isNaN(d.getTime())) return "";
+    return (d.getMonth() + 1) + "/" + d.getDate() + "(" + WEEK[d.getDay()] + ")";
+  }
+
+  // 화면에 보여 주지 않는 메모 문구 — 네이버 [공유] 교육일정 연동 안내
+  var HIDDEN_NOTE_RE = /네이버\s*\[?\s*공유\s*\]?\s*교육일정\s*연동/g;
+
+  // 메모에서 연동 안내만 걷어 내고, 실제로 남는 메모가 있을 때만 보여 줍니다.
+  function visibleNotes(notes) {
+    if (!notes) return "";
+    return String(notes).split(/\r?\n/).map(function (line) {
+      return line.replace(HIDDEN_NOTE_RE, "")
+        .replace(/[ \t]{2,}/g, " ")
+        .replace(/^[\s·,;/|-]+|[\s·,;/|-]+$/g, "");
+    }).filter(function (line) { return line !== ""; }).join("\n");
+  }
+
   function longDate(key) {
     var d = keyToDate(key);
     return (d.getMonth() + 1) + "월 " + d.getDate() + "일 " + WEEK[d.getDay()] + "요일";
@@ -1874,6 +1895,8 @@
 
       var seat = "신청 " + regs.length + "명" + (cap !== null ? " / 정원 " + cap + "명" : "");
 
+      var notes = visibleNotes(s.notes);
+
       return '<article class="event-card" data-id="' + esc(s.id) + '" style="--lv:' + color + '">'
         + '<div class="event-top">'
         + '<h3 class="event-title">' + esc(s.title) + '</h3>'
@@ -1884,7 +1907,7 @@
         + (s.location ? '<span class="mi"><svg><use href="#i-pin"/></svg>' + esc(s.location) + '</span>' : '')
         + (s.level ? '<span class="chip">' + esc(s.level) + '</span>' : '')
         + '</div>'
-        + (s.notes ? '<p class="event-notes">' + esc(s.notes) + '</p>' : '')
+        + (notes ? '<p class="event-notes">' + esc(notes) + '</p>' : '')
         + '<div class="event-signup">'
         + '<div class="reg-line"><span class="reg-count">' + esc(seat) + '</span>'
         + (chips ? '<div class="reg-chips">' + chips + '</div>' : '')
@@ -1930,11 +1953,13 @@
       var count = registrationsOf(s.id).length;
       return '<li class="mt-row">'
         + '<button type="button" class="mt-main" data-mt-id="' + esc(s.id) + '" data-key="' + esc(s.class_date) + '">'
-        + '<span class="mt-date">' + esc(shortDate(s.class_date)) + '</span>'
+        + '<span class="mt-k">날짜</span>'
+        + '<span class="mt-date">' + esc(mtShortDate(s.class_date)) + '</span>'
         + '<span class="mt-sep">·</span>'
-        + '<span class="mt-time">' + esc(s.start_time || "시간 미정") + '</span>'
+        + '<span class="mt-k">장소</span>'
+        + '<span class="mt-place">' + esc(s.location || "미정") + '</span>'
         + '<span class="mt-sep">·</span>'
-        + '<span class="mt-place">' + esc(s.location || "장소 미정") + '</span>'
+        + '<span class="mt-time"><span class="mt-k">집합</span> ' + esc(s.start_time || "미정") + '</span>'
         + '</button>'
         + (count ? '<span class="mt-count">' + count + '명</span>' : '')
         + '</li>';
