@@ -1,5 +1,5 @@
 -- ============================================================================
---  선데이프리다이빙 PWA — Supabase 스키마 (v1.1.0)
+--  선데이프리다이빙 PWA — Supabase 스키마 (v1.4.4)
 --  Supabase Dashboard → SQL Editor → New query → 아래 전체를 붙여넣고 RUN
 --  ※ 여러 번 실행해도 안전하도록 작성했습니다.
 -- ============================================================================
@@ -7,7 +7,8 @@
 create extension if not exists pgcrypto;
 
 -- ---------------------------------------------------------------------------
--- 0. 관리자 번호(PIN) 저장 테이블 (외부 읽기 차단)
+-- 0. 앱 설정값 (외부 읽기 차단) + 관리자 판별
+--    v1.4.4: 관리자 번호(PIN) 폐지 → sundayfreediving@gmail.com 로그인 세션 기준
 -- ---------------------------------------------------------------------------
 create table if not exists public.app_settings (
   key   text primary key,
@@ -16,24 +17,27 @@ create table if not exists public.app_settings (
 
 alter table public.app_settings enable row level security;
 
-insert into public.app_settings (key, value)
-values ('admin_pin', '0619')
-on conflict (key) do nothing;
+-- v1.4.4: 예전 PIN 값과 PIN 확인 함수를 정리합니다.
+update public.app_settings set value = '' where key = 'admin_pin';
+delete from public.app_settings where key = 'admin_pin';
+drop function if exists public.verify_admin_pin(text);
 
-create or replace function public.verify_admin_pin(p_pin text)
+create or replace function public.is_admin()
 returns boolean
 language sql
 stable
 security definer
-set search_path = public
+set search_path = public, auth
 as $$
-  select exists(
-    select 1 from public.app_settings
-     where key = 'admin_pin' and value = coalesce(p_pin, '')
-  );
+  select exists (
+    select 1 from auth.users u
+     where u.id = auth.uid()
+       and lower(u.email) = 'sundayfreediving@gmail.com'
+  )
+  or lower(coalesce(auth.jwt() ->> 'email', '')) = 'sundayfreediving@gmail.com';
 $$;
 
-grant execute on function public.verify_admin_pin(text) to anon, authenticated;
+grant execute on function public.is_admin() to anon, authenticated;
 
 -- ---------------------------------------------------------------------------
 -- 1. 수업일정 (누구나 열람, 관리자 번호 입력 시에만 추가/수정/삭제)
@@ -82,7 +86,6 @@ create trigger schedules_touch_updated_at
   for each row execute function public.touch_updated_at();
 
 create or replace function public.admin_upsert_schedule(
-  p_pin        text,
   p_id         uuid,
   p_title      text,
   p_class_date date,
@@ -101,8 +104,8 @@ as $$
 declare
   v_id uuid;
 begin
-  if not public.verify_admin_pin(p_pin) then
-    raise exception '관리자 번호가 맞지 않습니다.';
+  if not public.is_admin() then
+    raise exception '관리자만 일정을 바꿀 수 있습니다.';
   end if;
 
   if p_id is null then
@@ -126,22 +129,11 @@ begin
 end;
 $$;
 
-create or replace function public.admin_delete_schedule(p_pin text, p_id uuid)
-returns void
-language plpgsql
-security definer
-set search_path = public
-as $$
-begin
-  if not public.verify_admin_pin(p_pin) then
-    raise exception '관리자 번호가 맞지 않습니다.';
-  end if;
-  delete from public.schedules where id = p_id;
-end;
-$$;
+-- 예전 PIN 기반 서명은 남기지 않습니다.
+drop function if exists public.admin_upsert_schedule(text, uuid, text, date, text, text, text, text, integer, text);
+drop function if exists public.admin_delete_schedule(text, uuid);
 
-grant execute on function public.admin_upsert_schedule(text, uuid, text, date, text, text, text, text, integer, text) to anon, authenticated;
-grant execute on function public.admin_delete_schedule(text, uuid) to anon, authenticated;
+grant execute on function public.admin_upsert_schedule(uuid, text, date, text, text, text, text, integer, text) to authenticated;
 
 create or replace function public.upsert_schedule(
   p_id         uuid,
@@ -162,6 +154,10 @@ as $$
 declare
   v_id uuid;
 begin
+  if not public.is_admin() then
+    raise exception '관리자만 일정을 바꿀 수 있습니다.';
+  end if;
+
   if p_id is null then
     insert into public.schedules (title, class_date, start_time, end_time, location, level, capacity, notes)
     values (p_title, p_class_date, p_start_time, p_end_time, p_location, p_level, p_capacity, p_notes)
@@ -190,12 +186,128 @@ security definer
 set search_path = public
 as $$
 begin
+  if not public.is_admin() then
+    raise exception '관리자만 일정을 삭제할 수 있습니다.';
+  end if;
   delete from public.schedules where id = p_id;
 end;
 $$;
 
-grant execute on function public.upsert_schedule(uuid, text, date, text, text, text, text, integer, text) to anon, authenticated;
-grant execute on function public.delete_schedule(uuid) to anon, authenticated;
+grant execute on function public.upsert_schedule(uuid, text, date, text, text, text, text, integer, text) to authenticated;
+grant execute on function public.delete_schedule(uuid) to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- 1-B. 일정 신청 (v1.4.4)
+--      · 읽기: 누구나 (달력에 신청자 이름 표시)
+--      · 쓰기: SECURITY DEFINER RPC 로만
+-- ---------------------------------------------------------------------------
+create table if not exists public.schedule_registrations (
+  id          uuid primary key default gen_random_uuid(),
+  schedule_id uuid not null references public.schedules (id) on delete cascade,
+  user_id     uuid not null references auth.users (id) on delete cascade,
+  name        text not null check (char_length(btrim(name)) between 1 and 20),
+  created_at  timestamptz not null default now(),
+  unique (schedule_id, user_id)
+);
+
+create index if not exists schedule_registrations_schedule_idx
+  on public.schedule_registrations (schedule_id, created_at);
+
+alter table public.schedule_registrations enable row level security;
+
+revoke all on public.schedule_registrations from anon, authenticated;
+grant select on public.schedule_registrations to anon, authenticated;
+grant all on public.schedule_registrations to service_role;
+
+drop policy if exists "registrations_read_all" on public.schedule_registrations;
+create policy "registrations_read_all"
+  on public.schedule_registrations for select
+  to anon, authenticated
+  using (true);
+
+create or replace function public.register_schedule(p_schedule_id uuid, p_name text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_uid   uuid := auth.uid();
+  v_name  text := btrim(coalesce(p_name, ''));
+  v_cap   integer;
+  v_count integer;
+begin
+  if v_uid is null then
+    raise exception '로그인이 필요합니다.';
+  end if;
+  if char_length(v_name) < 1 then
+    raise exception '신청자 이름을 입력해 주세요.';
+  end if;
+  if char_length(v_name) > 20 then
+    raise exception '이름은 20자까지 입력할 수 있습니다.';
+  end if;
+
+  -- 정원 확인 중 동시 신청으로 정원을 넘지 않도록 일정 행을 잠급니다.
+  select capacity into v_cap
+    from public.schedules
+   where id = p_schedule_id
+     for update;
+
+  if not found then
+    raise exception '일정을 찾지 못했습니다.';
+  end if;
+
+  if v_cap is not null
+     and not exists (
+       select 1 from public.schedule_registrations
+        where schedule_id = p_schedule_id and user_id = v_uid
+     ) then
+    select count(*) into v_count
+      from public.schedule_registrations
+     where schedule_id = p_schedule_id;
+    if v_count >= v_cap then
+      raise exception '정원이 마감되었습니다.';
+    end if;
+  end if;
+
+  insert into public.schedule_registrations (schedule_id, user_id, name)
+  values (p_schedule_id, v_uid, v_name)
+  on conflict (schedule_id, user_id) do update set name = excluded.name;
+end;
+$$;
+
+create or replace function public.cancel_schedule_registration(
+  p_schedule_id uuid,
+  p_user_id     uuid default null
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_uid    uuid := auth.uid();
+  v_target uuid := coalesce(p_user_id, v_uid);
+begin
+  if v_uid is null then
+    raise exception '로그인이 필요합니다.';
+  end if;
+  if v_target <> v_uid and not public.is_admin() then
+    raise exception '본인 신청만 취소할 수 있습니다.';
+  end if;
+
+  delete from public.schedule_registrations
+   where schedule_id = p_schedule_id
+     and user_id = v_target;
+
+  if not found then
+    raise exception '신청 내역이 없습니다.';
+  end if;
+end;
+$$;
+
+grant execute on function public.register_schedule(uuid, text) to authenticated;
+grant execute on function public.cancel_schedule_registration(uuid, uuid) to authenticated;
 
 -- ---------------------------------------------------------------------------
 -- 2. 버디 모집 글 (누구나 읽기/쓰기, 본인만 수정, 관리자만 삭제)
@@ -267,7 +379,6 @@ end;
 $$;
 
 create or replace function public.admin_update_buddy_post(
-  p_pin      text,
   p_id       uuid,
   p_content  text,
   p_tag_date date,
@@ -279,7 +390,7 @@ security definer
 set search_path = public
 as $$
 begin
-  if not public.verify_admin_pin(p_pin) then
+  if not public.is_admin() then
     raise exception '관리자만 수정할 수 있습니다.';
   end if;
 
@@ -291,23 +402,26 @@ begin
 end;
 $$;
 
-create or replace function public.admin_delete_buddy_post(p_pin text, p_id uuid)
+create or replace function public.admin_delete_buddy_post(p_id uuid)
 returns void
 language plpgsql
 security definer
 set search_path = public
 as $$
 begin
-  if not public.verify_admin_pin(p_pin) then
+  if not public.is_admin() then
     raise exception '관리자만 삭제할 수 있습니다.';
   end if;
   delete from public.buddy_posts where id = p_id;
 end;
 $$;
 
-grant execute on function public.update_buddy_post(uuid, text, text, date, text) to anon, authenticated;
-grant execute on function public.admin_update_buddy_post(text, uuid, text, date, text) to anon, authenticated;
-grant execute on function public.admin_delete_buddy_post(text, uuid) to anon, authenticated;
+-- 예전 PIN 기반 서명은 남기지 않습니다.
+drop function if exists public.admin_update_buddy_post(text, uuid, text, date, text);
+drop function if exists public.admin_delete_buddy_post(text, uuid);
+
+grant execute on function public.admin_update_buddy_post(uuid, text, date, text) to authenticated;
+grant execute on function public.admin_delete_buddy_post(uuid) to authenticated;
 
 create or replace function public.delete_buddy_post(p_id uuid, p_token text)
 returns void
@@ -345,14 +459,14 @@ begin
 end;
 $$;
 
-create or replace function public.admin_sync_brand_avatar(p_pin text, p_avatar_url text)
+create or replace function public.admin_sync_brand_avatar(p_avatar_url text)
 returns void
 language plpgsql
 security definer
 set search_path = public
 as $$
 begin
-  if not public.verify_admin_pin(p_pin) then
+  if not public.is_admin() then
     raise exception '관리자만 동기화할 수 있습니다.';
   end if;
 
@@ -391,7 +505,8 @@ create trigger buddy_posts_fill_brand_avatar
   for each row execute function public.fill_brand_avatar_on_insert();
 
 grant execute on function public.sync_my_avatar(text, text) to anon, authenticated;
-grant execute on function public.admin_sync_brand_avatar(text, text) to anon, authenticated;
+grant execute on function public.admin_sync_brand_avatar(text) to authenticated;
+drop function if exists public.admin_sync_brand_avatar(text, text);
 
 -- ---------------------------------------------------------------------------
 -- 3. 버디 댓글 (누구나 읽기/쓰기, 관리자만 삭제)
@@ -426,21 +541,23 @@ create policy "comments_insert_all"
     and char_length(btrim(nickname)) between 1 and 20
   );
 
-create or replace function public.admin_delete_buddy_comment(p_pin text, p_id uuid)
+create or replace function public.admin_delete_buddy_comment(p_id uuid)
 returns void
 language plpgsql
 security definer
 set search_path = public
 as $$
 begin
-  if not public.verify_admin_pin(p_pin) then
+  if not public.is_admin() then
     raise exception '관리자만 삭제할 수 있습니다.';
   end if;
   delete from public.buddy_comments where id = p_id;
 end;
 $$;
 
-grant execute on function public.admin_delete_buddy_comment(text, uuid) to anon, authenticated;
+drop function if exists public.admin_delete_buddy_comment(text, uuid);
+
+grant execute on function public.admin_delete_buddy_comment(uuid) to authenticated;
 
 -- ---------------------------------------------------------------------------
 -- 5. 사용자별 개인 데이터 (v1.4.2 · 로그인하면 기기 간 자동 동기화)
@@ -502,8 +619,12 @@ create trigger user_state_touch_updated_at
 
 -- ---------------------------------------------------------------------------
 -- 4. 기본 권한
+--    v1.4.4: 일정은 SELECT 만 공개, 쓰기는 관리자 RPC 전용
 -- ---------------------------------------------------------------------------
 grant usage on schema public to anon, authenticated;
 grant select on public.schedules to anon, authenticated;
+revoke insert, update, delete on public.schedules from anon, authenticated;
 grant select, insert on public.buddy_posts to anon, authenticated;
+revoke update, delete on public.buddy_posts from anon, authenticated;
 grant select, insert on public.buddy_comments to anon, authenticated;
+revoke update, delete on public.buddy_comments from anon, authenticated;
