@@ -3065,12 +3065,23 @@
     return s;
   }
 
+  // 글자로 보이는 패킷인지 ("123\r\n" 같은 UART 형식) 판단합니다.
+  function eqTextLike(bytes) {
+    if (bytes.length < 3) return false;
+    var printable = 0;
+    for (var i = 0; i < bytes.length; i++) {
+      var b = bytes[i];
+      if ((b >= 32 && b <= 126) || b === 13 || b === 10 || b === 9) printable++;
+    }
+    return printable / bytes.length >= 0.7;
+  }
+
   // 한 패킷을 여러 규격으로 동시에 해석합니다.
   function eqCandidates(bytes, dv) {
     var out = [];
     var ascii = eqAscii(bytes);
     var m = ascii.match(/-?\d+(?:\.\d+)?/);
-    if (m) out.push({ key: "ascii", label: "ASCII", value: parseFloat(m[0]) });
+    if (m) out.push({ key: "ascii", label: "ASCII", value: parseFloat(m[0]), textLike: eqTextLike(bytes) });
     if (bytes.length >= 1) {
       out.push({ key: "u8", label: "uint8", value: bytes[0] });
       out.push({ key: "i8", label: "int8", value: dv.getInt8(0) });
@@ -3096,9 +3107,9 @@
       for (var i = 0; i < cands.length; i++) if (cands[i].key === mode) return cands[i];
       return null;
     }
-    // 1) ASCII 숫자 ("123\r\n" 같은 UART 형식)
+    // 1) ASCII 숫자 — 글자 패킷("123\r\n")일 때만 우선합니다.
     for (var a = 0; a < cands.length; a++) {
-      if (cands[a].key === "ascii" && isFinite(cands[a].value) && Math.abs(cands[a].value) < 100000) return cands[a];
+      if (cands[a].key === "ascii" && cands[a].textLike && isFinite(cands[a].value) && Math.abs(cands[a].value) < 100000) return cands[a];
     }
     // 2) 2바이트 정수 중 0~20000에서 가장 작은 값 (압력계의 흔한 형식)
     var pool = [];
@@ -3118,9 +3129,10 @@
     return cands[0] || null;
   }
 
-  function eqCandSummary(cands) {
+  function eqCandSummary(cands, skipKey) {
     var parts = [];
-    ["ascii", "u16le", "u16be", "f32le"].forEach(function (k) {
+    ["u16le", "u16be", "f32le", "ascii"].forEach(function (k) {
+      if (k === skipKey) return;
       for (var i = 0; i < cands.length; i++) {
         if (cands[i].key === k) { parts.push(cands[i].label + " " + eqNum(cands[i].value)); return; }
       }
@@ -3171,8 +3183,8 @@
     var cands = eqCandidates(bytes, dv);
     eq.lastCands = cands;
     var pick = eqPickValue(cands, eq.parseMode);
-    var summary = eqCandSummary(cands);
-    if (pick) summary = "선택 " + pick.label + " " + eqNum(pick.value) + (summary ? " · " + summary : "");
+    var summary = eqCandSummary(cands, pick ? pick.key : null);
+    if (pick) summary = "→ " + pick.label + " " + eqNum(pick.value) + (summary ? " · 다른 해석 " + summary : "");
     eqLogLine(kind === "READ" ? "READ" : "DATA", kind === "READ" ? "읽기" : "수신",
       eqShortUuid(uuid), eqHex(bytes), eqAscii(bytes), summary);
 
@@ -3541,8 +3553,9 @@
     };
     page.addEventListener("transitionend", onEnd);
     setTimeout(finish, 480);
-    if (!fromPop && eq.historyPushed) {
-      eq.historyPushed = false;
+    var wasPushed = eq.historyPushed;
+    eq.historyPushed = false;
+    if (!fromPop && wasPushed) {
       try { history.back(); } catch (e) { /* ignore */ }
     }
   }
