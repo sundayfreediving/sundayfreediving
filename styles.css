@@ -1398,7 +1398,7 @@ svg {
   padding: 2px 0 1px;
 }
 
-/* ---------- 달력 신청자 이름 ---------- */
+/* ---------- 관리자 안내 ---------- */
 .admin-badge-line {
   display: flex;
   align-items: center;
