@@ -8,7 +8,7 @@
 <meta name="theme-color" content="#0e1116">
 <meta name="color-scheme" content="dark">
 <meta name="format-detection" content="telephone=no">
-<link rel="manifest" href="./manifest.webmanifest?v=1.4.5">
+<link rel="manifest" href="./manifest.webmanifest?v=1.4.6">
 <link rel="icon" href="./icons/favicon-32.png" sizes="32x32" type="image/png">
 <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
 <link rel="apple-touch-startup-image" href="./icons/splash-1170x2532.png" media="(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3)">
@@ -21,7 +21,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="선데이">
-<link rel="stylesheet" href="./styles.css?v=1.4.5">
+<link rel="stylesheet" href="./styles.css?v=1.4.6">
 </head>
 <body>
 
@@ -142,7 +142,7 @@
 <div class="app" id="app">
   <header class="topbar">
     <div class="brand">
-      <span class="brand-mark" aria-hidden="true"><img src="./icons/brand-logo.png?v=1.4.5" alt=""></span>
+      <span class="brand-mark" aria-hidden="true"><img src="./icons/brand-logo.png?v=1.4.6" alt=""></span>
       <span class="brand-text">
         <strong>선데이프리다이빙</strong>
         <span class="brand-sub">
@@ -218,9 +218,11 @@
             <input class="field field-compact" id="freeLogDate" type="date" aria-label="로그 날짜">
             <input class="field field-compact" id="freeLogPlace" type="text" maxlength="24" placeholder="장소 (예: K26, 딥스테이션)" aria-label="다이빙 장소">
           </div>
-          <div class="free-log-bottom">
-            <input class="field field-compact" id="freeLogText" type="text" maxlength="120" placeholder="오늘의 다이빙 로그를 남겨보세요" aria-label="로그북 내용">
-            <button type="button" class="disc-save-btn" id="freeLogSaveBtn">저장</button>
+          <div class="free-log-write">
+            <textarea class="field free-log-text" id="freeLogText" rows="5" maxlength="600" placeholder="오늘의 다이빙 로그를 남겨보세요. 엔터로 줄을 바꿀 수 있어요." aria-label="로그북 내용"></textarea>
+            <div class="free-log-actions">
+              <button type="button" class="disc-save-btn" id="freeLogSaveBtn">저장</button>
+            </div>
           </div>
         </div>
         <div class="log-filter-row" id="logFilterRow" role="tablist" aria-label="종목 필터"></div>
@@ -234,7 +236,7 @@
         </div>
         <div class="log-meta-bar">
           <input class="field field-compact" id="logDateInput" type="date" aria-label="기록 날짜">
-          <input class="field field-compact" id="logMemoInput" type="text" maxlength="40" placeholder="장소 · 메모 (선택)" aria-label="장소 또는 메모">
+          <textarea class="field log-memo-text" id="logMemoInput" rows="1" maxlength="200" placeholder="장소 · 메모 (선택)" aria-label="장소 또는 메모"></textarea>
         </div>
         <div class="discipline-rows" id="disciplineRows"></div>
         <div class="disc-batch-actions">
@@ -698,7 +700,7 @@
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-<script src="./config.js?v=1.4.5"></script>
-<script src="./app.js?v=1.4.5"></script>
+<script src="./config.js?v=1.4.6"></script>
+<script src="./app.js?v=1.4.6"></script>
 </body>
 </html>

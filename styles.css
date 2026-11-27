@@ -1399,43 +1399,6 @@ svg {
 }
 
 /* ---------- 달력 신청자 이름 ---------- */
-.cal-cell.has-names {
-  flex-direction: column;
-  justify-content: flex-start;
-  gap: 0;
-  padding: 4px 1px 2px;
-  font-size: 13px;
-  line-height: 1.1;
-}
-
-.cal-cell.has-names.is-today { padding-top: 4px; padding-bottom: 2px; }
-
-.cal-names {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  width: 100%;
-  margin-top: 2px;
-  overflow: hidden;
-}
-
-.cal-names b {
-  max-width: 100%;
-  font-size: 8px;
-  font-weight: 700;
-  line-height: 1.15;
-  letter-spacing: -0.03em;
-  color: var(--ink-2);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.cal-names b.more { color: var(--ink-3); font-size: 7.5px; }
-.cal-cell.is-selected .cal-names b { color: rgba(20, 23, 29, 0.82); }
-.cal-cell.has-names .cal-dots { display: none; }
-.cal-cell.has-names .cal-today-tag { display: none; }
-
 .admin-badge-line {
   display: flex;
   align-items: center;
@@ -1471,8 +1434,9 @@ svg {
 
 .reg-line {
   display: flex;
-  flex-direction: column;
-  gap: 5px;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 7px;
   min-width: 0;
 }
 
@@ -1483,49 +1447,26 @@ svg {
   font-variant-numeric: tabular-nums;
 }
 
-.reg-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-
-.reg-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  height: 23px;
-  padding: 0 8px;
-  border-radius: 8px;
+/* 신청자 이름 — '신청 x명' 옆에 같은 회색 글씨로만 (박스·배경 없음) */
+.reg-names {
   font-size: 11.5px;
-  font-weight: 650;
-  color: var(--ink-2);
-  background: var(--surface-2);
-  border: 1px solid var(--line);
-  max-width: 100%;
-}
-
-.reg-chip.is-mine {
-  color: var(--teal);
-  background: var(--teal-soft);
-  border-color: transparent;
-}
-
-.reg-chip.is-admin { padding-right: 2px; }
-
-.reg-x {
-  width: 19px;
-  height: 19px;
-  margin-left: 1px;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  font-size: 12px;
-  line-height: 1;
+  font-weight: 600;
+  line-height: 1.5;
   color: var(--ink-3);
-  background: var(--surface-3);
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
-.reg-x:hover { color: #fff; background: var(--danger); }
+.reg-name {
+  font-weight: 600;
+  color: var(--ink-3);
+}
+
+.reg-name.is-mine { color: var(--ink-2); }
+
+.reg-name.is-tap { cursor: pointer; }
+
+.reg-sep { color: var(--ink-3); opacity: 0.7; }
 
 .signup-btn {
   flex: none;
@@ -2959,15 +2900,47 @@ svg {
   gap: 8px;
 }
 
-.free-log-bottom {
+.free-log-write {
   display: flex;
-  gap: 8px;
-  align-items: center;
+  flex-direction: column;
+  gap: 6px;
 }
 
-.free-log-bottom .field-compact {
-  flex: 1;
-  min-width: 0;
+/* 카톡처럼 길게 쓰는 로그북 입력창 */
+.free-log-text {
+  width: 100%;
+  height: 148px;
+  min-height: 148px;
+  padding: 11px 12px;
+  font-size: 14px;
+  line-height: 1.55;
+  border-radius: 12px;
+  resize: none;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: inherit;
+  letter-spacing: -0.01em;
+}
+
+.free-log-text::placeholder { color: var(--ink-3); }
+
+.free-log-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.log-memo-text {
+  height: 36px;
+  min-height: 36px;
+  padding: 8px 10px;
+  font-size: 13px;
+  line-height: 1.4;
+  border-radius: 11px;
+  resize: none;
+  overflow-y: auto;
+  font-family: inherit;
 }
 
 .field-compact {
@@ -3278,9 +3251,15 @@ svg {
 .log-item-sub {
   font-size: 11.5px;
   color: var(--ink-3);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* 로그북에 길게 쓴 글은 줄바꿈 그대로 보여 줍니다 */
+.log-entry-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
 }
 
 .log-del-btn {
