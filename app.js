@@ -312,6 +312,8 @@
   function applySession(session) {
     var email = session && session.user ? String(session.user.email || "") : "";
     var admin = email.toLowerCase() === ADMIN_EMAIL;
+    // 관리자 이메일이라도 관리자 번호를 입력하기 전에는 관리자 도구를 열지 않습니다.
+    if (admin && useCloud() && !state.adminPin) admin = false;
     state.adminEmail = email;
     if (admin !== state.isAdmin) {
       state.isAdmin = admin;
