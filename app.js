@@ -225,7 +225,7 @@
     }
   }
 
-  function savePrefs() { lsSet("sfd.prefs", prefs); }
+  function savePrefs() { pSet("sfd.prefs", prefs); }
 
   // ---------- 상태 ----------
   var DISCIPLINES = [
@@ -290,7 +290,7 @@
     }).then(function () {
       if (!window.supabase || !window.supabase.createClient) throw new Error("supabase-missing");
       sb = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY, {
-        auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
+        auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
       });
       state.cloudReady = true;
       return sb.auth.getSession();
@@ -317,6 +317,509 @@
       state.isAdmin = admin;
       renderScheduleChrome();
       renderPosts();
+    }
+    var user = session && session.user ? session.user : null;
+    handleSessionChange(user).catch(function (err) {
+      console.warn("[SFD] 세션 동기화 실패", err);
+    });
+  }
+
+  // =========================================================
+  //  계정 · 기기 간 동기화 (v1.4.2)
+  //  · 로그인한 계정(user.id) 기준으로 개인 데이터를 Supabase user_state에 보관
+  //  · 로그인할 때 이 기기의 값과 클라우드 값을 항목별로 병합 (기록은 합집합)
+  //  · 값이 바뀌면 1.2초 뒤 저장, 25초마다 · 화면 복귀 시 다시 받아오기
+  // =========================================================
+  var PERSONAL_KEYS = ["sfd.prefs", "sfd.history", "sfd.logbook", "sfd.eq", "sfd.licensePhoto"];
+  var PERSONAL_LABELS = {
+    "sfd.prefs": "프로필 · PB · 라운드 설정",
+    "sfd.history": "Apnea Training 훈련 기록",
+    "sfd.logbook": "로그북 · 다이빙 기록",
+    "sfd.eq": "EZEQ 압력계 설정",
+    "sfd.licensePhoto": "자격증 사진"
+  };
+  var OWNER_KEY = "sfd.owner";
+  var SYNC_META_KEY = "sfd.syncMeta";
+  var PUSH_DELAY_MS = 1200;
+  var PULL_EVERY_MS = 25000;
+  var MAX_SYNC_BYTES = 3 * 1024 * 1024;
+
+  var account = {
+    userId: "",
+    email: "",
+    syncing: false,
+    lastSyncAt: 0,
+    lastError: "",
+    saveTimers: {},
+    pullTimer: null,
+    bound: false,
+    signingOut: false,
+    announce: false
+  };
+
+  function teamSiteUrl() {
+    var path = String(window.location.pathname || "/").replace(/index\.html$/, "");
+    return window.location.origin + path;
+  }
+
+  function rawGet(key) {
+    try { return localStorage.getItem(key); } catch (e) { return null; }
+  }
+
+  function rawSet(key, value) {
+    try { localStorage.setItem(key, value); return true; } catch (e) { return false; }
+  }
+
+  function rawRemove(key) {
+    try { localStorage.removeItem(key); } catch (e) { /* ignore */ }
+  }
+
+  function ownerOf() {
+    var v = lsGet(OWNER_KEY, "");
+    return typeof v === "string" ? v : "";
+  }
+
+  function setOwner(id) { lsSet(OWNER_KEY, id || ""); }
+
+  function readSyncMeta() {
+    var m = lsGet(SYNC_META_KEY, null);
+    return m && typeof m === "object" ? m : {};
+  }
+
+  function writeSyncMeta(m) { lsSet(SYNC_META_KEY, m || {}); }
+
+  function metaAt(key) {
+    var m = readSyncMeta()[key] || {};
+    return Number(m.at) || 0;
+  }
+
+  function setMeta(key, at, dirty) {
+    var m = readSyncMeta();
+    var prev = m[key] || {};
+    m[key] = { at: Number(at) || Date.now(), dirty: !!dirty, lastPushAt: prev.lastPushAt || 0 };
+    writeSyncMeta(m);
+  }
+
+  // 개인 데이터 쓰기 → 저장 후 동기화 예약
+  function pSet(key, value) {
+    var ok = lsSet(key, value);
+    if (ok) queueKeySave(key);
+    return ok;
+  }
+
+  function pSetRaw(key, rawValue) {
+    var ok = rawSet(key, rawValue);
+    if (ok) queueKeySave(key);
+    return ok;
+  }
+
+  function queueKeySave(key, immediate) {
+    if (PERSONAL_KEYS.indexOf(key) < 0) return;
+    setMeta(key, Date.now(), !!(account.userId && sb && useCloud()));
+    updateAccountPill();
+    if (!account.userId || !sb || !useCloud()) return;
+    clearTimeout(account.saveTimers[key]);
+    var run = function () {
+      delete account.saveTimers[key];
+      pushKey(key).catch(function (err) {
+        console.warn("[SFD] 클라우드 저장 실패", key, err);
+        account.lastError = errText(err);
+        updateAccountPill();
+      });
+    };
+    if (immediate) run();
+    else account.saveTimers[key] = setTimeout(run, PUSH_DELAY_MS);
+  }
+
+  function errText(err) {
+    if (!err) return "알 수 없는 오류";
+    if (typeof err === "string") return err;
+    return err.message || err.error_description || err.hint || "알 수 없는 오류";
+  }
+
+  function localValueFor(key) {
+    var raw = rawGet(key);
+    if (raw === null) return null;
+    if (key === "sfd.licensePhoto") return raw;
+    try { return JSON.parse(raw); } catch (e) { return raw; }
+  }
+
+  async function pushKey(key) {
+    if (!account.userId || !sb || !useCloud()) return false;
+    var raw = rawGet(key);
+    if (raw !== null && raw.length > MAX_SYNC_BYTES) {
+      account.lastError = "자격증 사진이 너무 커서 동기화하지 못했어요";
+      updateAccountPill();
+      return false;
+    }
+    var value = localValueFor(key);
+    var at = metaAt(key) || Date.now();
+    var res = await sb.from("user_state").upsert({
+      user_id: account.userId,
+      key: key,
+      value: value,
+      client_updated_at: at
+    }, { onConflict: "user_id,key" });
+    if (res.error) throw res.error;
+    setMeta(key, at, false);
+    account.lastSyncAt = Date.now();
+    account.lastError = "";
+    updateAccountPill();
+    refreshAccountSheet();
+    return true;
+  }
+
+  async function flushPendingSaves() {
+    Object.keys(account.saveTimers).forEach(function (k) {
+      clearTimeout(account.saveTimers[k]);
+      delete account.saveTimers[k];
+    });
+    var meta = readSyncMeta();
+    var pending = PERSONAL_KEYS.filter(function (k) { return meta[k] && meta[k].dirty; });
+    for (var i = 0; i < pending.length; i++) {
+      try { await pushKey(pending[i]); } catch (e) { console.warn("[SFD] 저장 실패", e); }
+    }
+    return pending.length;
+  }
+
+  function applyRemoteRow(key, value, at) {
+    if (value === null || value === undefined) {
+      rawRemove(key);
+    } else if (key === "sfd.licensePhoto") {
+      rawSet(key, String(value));
+    } else {
+      lsSet(key, value);
+    }
+    setMeta(key, Number(at) || Date.now(), false);
+  }
+
+  function recordKeyOf(item) {
+    if (!item || typeof item !== "object") return "";
+    return String(item.id || (item.disc + "|" + item.date + "|" + (item.createdAt || "")));
+  }
+
+  function sortRecords(key, list) {
+    if (key === "sfd.history") {
+      list.sort(function (a, b) { return String(b.at || "").localeCompare(String(a.at || "")); });
+      return list.slice(0, 40);
+    }
+    list.sort(function (a, b) {
+      var da = String(a.date || ""), db = String(b.date || "");
+      if (da !== db) return db.localeCompare(da);
+      return (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0);
+    });
+    return list;
+  }
+
+  function unionRecords(key, localList, remoteList) {
+    var byId = {};
+    var order = [];
+    function add(item) {
+      var id = recordKeyOf(item);
+      if (!id) return false;
+      if (byId[id]) return false;
+      byId[id] = item;
+      order.push(id);
+      return true;
+    }
+    var addedFromRemote = 0;
+    (Array.isArray(localList) ? localList : []).forEach(add);
+    ( Array.isArray(remoteList) ? remoteList : []).forEach(function (item) {
+      if (add(item)) addedFromRemote++;
+    });
+    var merged = order.map(function (id) { return byId[id]; });
+    return { list: sortRecords(key, merged), addedFromRemote: addedFromRemote };
+  }
+
+  // 로그인 직후 · 지금 동기화 : 클라우드와 이 기기 값을 합칩니다.
+  async function mergeAccountData(adoptLocal) {
+    if (!account.userId || !sb || !useCloud()) return 0;
+    var res = await sb.from("user_state").select("key,value,client_updated_at");
+    if (res.error) throw res.error;
+    var rows = {};
+    (res.data || []).forEach(function (row) { rows[row.key] = row; });
+    var changed = 0;
+
+    for (var i = 0; i < PERSONAL_KEYS.length; i++) {
+      var key = PERSONAL_KEYS[i];
+      var row = rows[key] || null;
+      var hasLocal = rawGet(key) !== null;
+      if (!hasLocal && !row) continue;
+
+      if (!hasLocal && row) {
+        applyRemoteRow(key, row.value, Number(row.client_updated_at || 0));
+        changed++;
+        continue;
+      }
+
+      if (hasLocal && !row) {
+        await pushKey(key);
+        continue;
+      }
+
+      var remoteAt = Number(row.client_updated_at || 0);
+      var localAt = metaAt(key);
+
+      if (key === "sfd.history" || key === "sfd.logbook") {
+        var localList = localValueFor(key);
+        var remoteList = Array.isArray(row.value) ? row.value : [];
+        var merged = unionRecords(key, localList, remoteList);
+        var localCount = Array.isArray(localList) ? localList.length : 0;
+        var lost = merged.list.length !== localCount;
+        if (merged.addedFromRemote || lost) {
+          lsSet(key, merged.list);
+          setMeta(key, Date.now(), true);
+          changed++;
+          await pushKey(key);
+        }
+        continue;
+      }
+
+      if (!localAt && adoptLocal) {
+        // 로그인 없이 이 기기에서 쓰던 값 → 이 기기 값 우선
+        setMeta(key, Date.now(), true);
+        await pushKey(key);
+        continue;
+      }
+
+      if (remoteAt > localAt) {
+        applyRemoteRow(key, row.value, remoteAt);
+        changed++;
+      } else if (localAt > remoteAt) {
+        await pushKey(key);
+      }
+    }
+
+    account.lastSyncAt = Date.now();
+    account.lastError = "";
+    updateAccountPill();
+    return changed;
+  }
+
+  // 주기적 · 화면 복귀 시：바뀐 항목만 받아옵니다 (사진은 바뀌었을 때만 내려받음)
+  async function pullChanged() {
+    if (!account.userId || !sb || !useCloud() || account.syncing) return 0;
+    account.syncing = true;
+    updateAccountPill();
+    var applied = 0;
+    try {
+      var heads = await sb.from("user_state").select("key,client_updated_at");
+      if (heads.error) throw heads.error;
+      var need = [];
+      (heads.data || []).forEach(function (row) {
+        if (PERSONAL_KEYS.indexOf(row.key) < 0) return;
+        var meta = readSyncMeta()[row.key] || {};
+        if (meta.dirty) return;
+        if (Number(row.client_updated_at || 0) > (Number(meta.at) || 0)) need.push(row.key);
+      });
+      if (need.length) {
+        var full = await sb.from("user_state").select("key,value,client_updated_at").in("key", need);
+        if (full.error) throw full.error;
+        (full.data || []).forEach(function (row) {
+          applyRemoteRow(row.key, row.value, Number(row.client_updated_at || 0));
+          applied++;
+        });
+        if (applied) reloadPersonalState();
+      }
+      account.lastSyncAt = Date.now();
+      account.lastError = "";
+    } catch (err) {
+      account.lastError = errText(err);
+      console.warn("[SFD] 동기화 실패", err);
+    } finally {
+      account.syncing = false;
+      updateAccountPill();
+      refreshAccountSheet();
+    }
+    return applied;
+  }
+
+  function reloadPersonalState() {
+    try { loadPrefs(); } catch (e) { /* ignore */ }
+    state.pb = prefs.pb;
+    state.tableType = prefs.tableType;
+    var h = lsGet("sfd.history", []);
+    state.history = Array.isArray(h) ? h : [];
+    var l = lsGet("sfd.logbook", []);
+    state.logbook = Array.isArray(l) ? l : [];
+    try { eqLoadPrefs(); } catch (e) { /* ignore */ }
+    try { renderHome(); } catch (e) { /* ignore */ }
+    try { renderBreath(); } catch (e) { /* ignore */ }
+    try { renderLicenseVault(); } catch (e) { /* ignore */ }
+    try { eqRenderValue(false); } catch (e) { /* ignore */ }
+  }
+
+  // 계정별 로컬 보관 ───────────────────────────────────────────
+  function archivePersonalTo(owner) {
+    if (!owner) return;
+    PERSONAL_KEYS.forEach(function (k) {
+      var raw = rawGet(k);
+      if (raw === null) return;
+      rawSet("sfd.u." + owner + "." + k, raw);
+    });
+    lsSet("sfd.u." + owner + ".meta", readSyncMeta());
+  }
+
+  function dropPersonalData() {
+    PERSONAL_KEYS.forEach(function (k) { rawRemove(k); });
+    writeSyncMeta({});
+  }
+
+  function restorePersonalFrom(owner) {
+    if (!owner) return;
+    PERSONAL_KEYS.forEach(function (k) {
+      var raw = rawGet("sfd.u." + owner + "." + k);
+      if (raw !== null) rawSet(k, raw);
+    });
+    var m = lsGet("sfd.u." + owner + ".meta", null);
+    writeSyncMeta(m && typeof m === "object" ? m : {});
+  }
+
+  async function handleSessionChange(user) {
+    if (account.signingOut) return;
+    var uid = user && user.id ? String(user.id) : "";
+    if (!uid) {
+      if (account.userId) await endAccountSession(false);
+      updateAccountPill();
+      return;
+    }
+    if (account.userId === uid) {
+      updateAccountPill();
+      return;
+    }
+
+    account.userId = uid;
+    account.email = String(user.email || "");
+    updateAccountPill();
+
+    var prevOwner = ownerOf();
+    var adoptLocal = !prevOwner;
+    try {
+      if (prevOwner && prevOwner !== uid) {
+        archivePersonalTo(prevOwner);
+        dropPersonalData();
+        restorePersonalFrom(uid);
+      } else if (prevOwner === uid) {
+        restorePersonalFrom(uid);
+      }
+      setOwner(uid);
+      await mergeAccountData(adoptLocal);
+      reloadPersonalState();
+      startPullTimer();
+      bindSyncListeners();
+      if (account.announce) {
+        account.announce = false;
+        toast(account.email + " 계정으로 기록을 동기화했어요");
+      }
+    } catch (err) {
+      account.lastError = errText(err);
+      console.warn("[SFD] 로그인 동기화 실패", err);
+      if (account.announce) {
+        account.announce = false;
+        toast("로그인은 됐지만 동기화에 문제가 있어요: " + errText(err));
+      }
+    }
+    updateAccountPill();
+    refreshAccountSheet();
+  }
+
+  async function endAccountSession(reload) {
+    stopPullTimer();
+    Object.keys(account.saveTimers).forEach(function (k) {
+      clearTimeout(account.saveTimers[k]);
+      delete account.saveTimers[k];
+    });
+    var uid = account.userId || ownerOf();
+    if (uid) archivePersonalTo(uid);
+    dropPersonalData();
+    setOwner("");
+    account.userId = "";
+    account.email = "";
+    account.lastSyncAt = 0;
+    account.lastError = "";
+    updateAccountPill();
+    if (reload) location.reload();
+    else reloadPersonalState();
+  }
+
+  function startPullTimer() {
+    stopPullTimer();
+    account.pullTimer = setInterval(function () {
+      if (document.visibilityState === "visible") {
+        pullChanged().catch(function () { /* ignore */ });
+      }
+    }, PULL_EVERY_MS);
+  }
+
+  function stopPullTimer() {
+    if (account.pullTimer) { clearInterval(account.pullTimer); account.pullTimer = null; }
+  }
+
+  function bindSyncListeners() {
+    if (account.bound) return;
+    account.bound = true;
+    document.addEventListener("visibilitychange", function () {
+      if (document.visibilityState === "visible" && account.userId) {
+        pullChanged().catch(function () { /* ignore */ });
+      }
+    });
+    window.addEventListener("focus", function () {
+      if (account.userId) pullChanged().catch(function () { /* ignore */ });
+    });
+    window.addEventListener("online", function () {
+      if (account.userId) pullChanged().catch(function () { /* ignore */ });
+    });
+    window.addEventListener("beforeunload", function () {
+      if (account.userId) {
+        flushPendingSaves().catch(function () { /* ignore */ });
+      }
+    });
+  }
+
+  async function syncNow() {
+    if (!account.userId || !sb) return;
+    try {
+      await flushPendingSaves();
+      var n = await mergeAccountData(false);
+      account.lastSyncAt = Date.now();
+      refreshAccountSheet();
+      return n;
+    } catch (err) {
+      account.lastError = errText(err);
+      throw err;
+    }
+  }
+
+  // 표시 ──────────────────────────────────────────────────
+  function updateAccountPill() {
+    var btn = $("#accountOpenBtn");
+    var dot = $("#accountDot");
+    if (btn) {
+      btn.classList.toggle("is-on", !!account.userId);
+      btn.setAttribute("aria-label", account.userId ? "계정 · 동기화 켜짐" : "로그인 · 기기 동기화");
+      btn.setAttribute("title", account.userId ? (account.email || "동기화 켜짐") : "로그인 · 기기 동기화");
+    }
+    if (dot) {
+      dot.hidden = !account.userId;
+      dot.classList.toggle("is-busy", !!account.syncing);
+    }
+  }
+
+  function lastSyncText() {
+    if (account.syncing) return "동기화 중…";
+    if (account.lastError) return "확인 필요";
+    if (!account.lastSyncAt) return "아직 없음";
+    var d = new Date(account.lastSyncAt);
+    return pad2(d.getHours()) + ":" + pad2(d.getMinutes()) + " 동기화됨";
+  }
+
+  function refreshAccountSheet() {
+    var el = $("#accLastSync");
+    if (el) el.textContent = lastSyncText();
+    var note = $("#accSyncNote");
+    if (note) {
+      note.hidden = !account.lastError;
+      note.textContent = account.lastError || "";
     }
   }
 
@@ -787,7 +1290,7 @@
     if (!Array.isArray(state.history)) state.history = [];
     state.history.unshift(entry);
     if (state.history.length > 40) state.history = state.history.slice(0, 40);
-    lsSet("sfd.history", state.history);
+    pSet("sfd.history", state.history);
     renderHistory();
   }
 
@@ -1695,6 +2198,258 @@
     }
   }
 
+  // ---------- 계정 · 동기화 시트 ----------
+  function authErrorText(err) {
+    var msg = errText(err);
+    var low = msg.toLowerCase();
+    if (low.indexOf("invalid login credentials") >= 0) return "이메일이나 비밀번호가 맞지 않아요.";
+    if (low.indexOf("email not confirmed") >= 0) return "메일함의 확인 링크를 먼저 눌러 주세요.";
+    if (low.indexOf("already registered") >= 0) return "이미 계정이 있어요. 아래에서 로그인해 주세요.";
+    if (low.indexOf("password should be at least") >= 0) return "비밀번호는 6자 이상이어야 해요.";
+    if (low.indexOf("rate limit") >= 0) return "메일 발송 한도를 넘었어요. 조금 뒤에 다시 시도해 주세요.";
+    if (low.indexOf("failed to fetch") >= 0 || low.indexOf("network") >= 0) return "인터넷 연결을 확인해 주세요.";
+    if (low.indexOf("user not found") >= 0) return "이 이메일로는 계정을 찾지 못했어요.";
+    return msg;
+  }
+
+  function accountSheetHtml(mode) {
+    if (!cloudConfigured()) {
+      return '<p class="sheet-text">기기 간 동기화는 클라우드(Supabase)에 연결된 상태에서만 쓸 수 있어요.</p>';
+    }
+
+    if (account.userId) {
+      var items = PERSONAL_KEYS.map(function (k) {
+        return '<li><svg><use href="#i-check"/></svg>' + esc(PERSONAL_LABELS[k] || k) + '</li>';
+      }).join("");
+      return '<div class="acc-state"><span class="dot"></span><p><strong>' + esc(account.email || "로그인됨") + '</strong>이 계정으로 동기화 중</p></div>'
+        + '<div class="acc-meta"><span>마지막 동기화 · <b id="accLastSync">' + esc(lastSyncText()) + '</b></span></div>'
+        + '<p class="acc-err" id="accSyncNote" hidden></p>'
+        + '<div class="admin-menu">'
+        + '<button type="button" id="accSyncNow"><svg><use href="#i-reset"/></svg>지금 동기화</button>'
+        + '<button type="button" id="accChangePwToggle"><svg><use href="#i-lock"/></svg>비밀번호 변경</button>'
+        + '<button type="button" class="danger" id="accSignOut"><svg><use href="#i-close"/></svg>로그아웃</button>'
+        + '</div>'
+        + '<div id="accPwBox" hidden>'
+        + '<div class="form-row"><label for="accNewPw">새 비밀번호</label><input id="accNewPw" type="password" autocomplete="new-password" placeholder="6자 이상"></div>'
+        + '<div class="form-row"><label for="accNewPw2">새 비밀번호 확인</label><input id="accNewPw2" type="password" autocomplete="new-password"></div>'
+        + '<p class="acc-err" id="accPwErr" hidden></p>'
+        + '<div class="form-actions"><button type="button" class="btn-primary" id="accPwSave">비밀번호 바꾸기</button></div>'
+        + '</div>'
+        + '<ul class="acc-items">' + items + '</ul>'
+        + '<p class="acc-sub">기록이 바뀌면 자동으로 올라가고, 다른 기기에서 바꾼 값은 앱으로 돌아올 때 받아옵니다. <b>아이폰 · 아이패드 · 맥북</b> 어디서든 그대로 이어져요.</p>';
+    }
+
+    var fields = '<div class="form-row"><label for="accEmail">이메일</label>'
+      + '<input id="accEmail" type="email" inputmode="email" autocomplete="username" autocapitalize="off" spellcheck="false" placeholder="name@example.com"></div>'
+      + '<div class="form-row"><label for="accPw">비밀번호</label>'
+      + '<input id="accPw" type="password" autocomplete="current-password" placeholder="6자 이상"></div>'
+      + '<p class="acc-err" id="accErr" hidden></p>';
+
+    if (mode === "signup") {
+      return '<p class="sheet-text">이메일과 비밀번호로 계정을 만들면 기록이 클라우드에 저장돼요.</p>'
+        + fields
+        + '<div class="form-row"><label for="accPw2">비밀번호 확인</label>'
+        + '<input id="accPw2" type="password" autocomplete="new-password"></div>'
+        + '<div class="form-actions"><button type="button" class="btn-primary" id="accSignUp">계정 만들기</button></div>'
+        + '<button type="button" class="acc-link" id="accToSignIn">이미 계정이 있어요 · 로그인</button>';
+    }
+
+    return '<p class="sheet-text">같은 계정으로 로그인하면 다른 기기에서도 <b>내 기록이 그대로</b> 이어져요.</p>'
+      + fields
+      + '<div class="form-actions"><button type="button" class="btn-primary" id="accSignIn">로그인</button></div>'
+      + '<button type="button" class="acc-link" id="accToSignUp">계정이 없나요? 계정 만들기</button>'
+      + '<button type="button" class="acc-link" id="accReset">비밀번호를 잊었어요</button>'
+      + '<p class="acc-sub">로그인하지 않아도 앱은 그대로 쓸 수 있지만, 기록은 <b>이 기기에만</b> 남아요.</p>';
+  }
+
+  function openAccountSheet(mode) {
+    var signedIn = !!account.userId;
+    openSheet(signedIn ? "내 계정 · 동기화" : "로그인 · 기기 동기화", accountSheetHtml(mode || "signin"));
+
+    var errEl = $("#accErr");
+    function showErr(msg) {
+      if (!errEl) { if (msg) toast(msg); return; }
+      errEl.hidden = !msg;
+      errEl.textContent = msg || "";
+    }
+
+    async function ensureSb() {
+      if (sb) return true;
+      var ok = await ensureCloud();
+      return !!(ok && sb && useCloud());
+    }
+
+    if (signedIn) {
+      var syncBtn = $("#accSyncNow");
+      if (syncBtn) {
+        syncBtn.addEventListener("click", async function () {
+          var label = syncBtn.innerHTML;
+          syncBtn.disabled = true;
+          syncBtn.textContent = "동기화 중…";
+          try {
+            var n = await syncNow();
+            refreshAccountSheet();
+            toast(n ? "다른 기기의 기록 " + n + "건을 받아왔어요" : "이미 최신 상태예요");
+          } catch (err) {
+            toast("동기화하지 못했어요: " + authErrorText(err));
+          } finally {
+            syncBtn.disabled = false;
+            syncBtn.innerHTML = label;
+          }
+        });
+      }
+
+      var pwToggle = $("#accChangePwToggle");
+      if (pwToggle) {
+        pwToggle.addEventListener("click", function () {
+          var box = $("#accPwBox");
+          if (!box) return;
+          box.hidden = !box.hidden;
+          if (!box.hidden) setTimeout(function () { var f = $("#accNewPw"); if (f) f.focus(); }, 90);
+        });
+      }
+
+      var pwSave = $("#accPwSave");
+      if (pwSave) {
+        pwSave.addEventListener("click", async function () {
+          var p1 = ($("#accNewPw") || {}).value || "";
+          var p2 = ($("#accNewPw2") || {}).value || "";
+          var errBox = $("#accPwErr");
+          function pwErr(msg) { if (errBox) { errBox.hidden = !msg; errBox.textContent = msg || ""; } }
+          if (p1.length < 6) { pwErr("비밀번호는 6자 이상으로 정해 주세요."); return; }
+          if (p1 !== p2) { pwErr("두 비밀번호가 서로 달라요."); return; }
+          pwErr("");
+          pwSave.disabled = true;
+          pwSave.textContent = "바꾸는 중…";
+          try {
+            if (!(await ensureSb())) throw new Error("클라우드에 연결하지 못했어요");
+            var res = await sb.auth.updateUser({ password: p1 });
+            if (res.error) throw res.error;
+            closeSheet();
+            toast("비밀번호를 바꿨어요. 다른 기기에서도 새 비밀번호로 로그인하세요.");
+          } catch (err) {
+            pwErr(authErrorText(err));
+            pwSave.disabled = false;
+            pwSave.textContent = "비밀번호 바꾸기";
+          }
+        });
+      }
+
+      var outBtn = $("#accSignOut");
+      if (outBtn) {
+        outBtn.addEventListener("click", async function () {
+          if (!window.confirm("로그아웃할까요?\n\n이 기기에 있던 개인 기록은 지워지고, 다시 로그인하면 클라우드에서 그대로 불러옵니다.")) return;
+          account.signingOut = true;
+          outBtn.disabled = true;
+          outBtn.textContent = "로그아웃 중…";
+          try { await flushPendingSaves(); } catch (e) { /* ignore */ }
+          try { if (sb) await sb.auth.signOut(); } catch (e) { /* ignore */ }
+          await endAccountSession(true);
+        });
+      }
+      return;
+    }
+
+    function readCreds() {
+      var email = (($("#accEmail") || {}).value || "").trim();
+      var pw = ($("#accPw") || {}).value || "";
+      return { email: email, pw: pw };
+    }
+
+    var toSignUp = $("#accToSignUp");
+    if (toSignUp) toSignUp.addEventListener("click", function () { openAccountSheet("signup"); });
+    var toSignIn = $("#accToSignIn");
+    if (toSignIn) toSignIn.addEventListener("click", function () { openAccountSheet("signin"); });
+
+    var signInBtn = $("#accSignIn");
+    if (signInBtn) {
+      var doSignIn = async function () {
+        var c = readCreds();
+        if (!c.email || !c.pw) { showErr("이메일과 비밀번호를 입력해 주세요."); return; }
+        showErr("");
+        signInBtn.disabled = true;
+        signInBtn.textContent = "로그인 중…";
+        try {
+          if (!(await ensureSb())) throw new Error("클라우드에 연결하지 못했어요. 잠시 후 다시 시도해 주세요.");
+          var res = await sb.auth.signInWithPassword({ email: c.email, password: c.pw });
+          if (res.error) throw res.error;
+          account.announce = true;
+          closeSheet();
+        } catch (err) {
+          showErr(authErrorText(err));
+          signInBtn.disabled = false;
+          signInBtn.textContent = "로그인";
+        }
+      };
+      signInBtn.addEventListener("click", doSignIn);
+      var pwInput = $("#accPw");
+      if (pwInput) {
+        pwInput.addEventListener("keydown", function (e) {
+          if (e.key === "Enter") { e.preventDefault(); doSignIn(); }
+        });
+      }
+    }
+
+    var signUpBtn = $("#accSignUp");
+    if (signUpBtn) {
+      signUpBtn.addEventListener("click", async function () {
+        var c = readCreds();
+        var p2 = ($("#accPw2") || {}).value || "";
+        if (!c.email || !c.pw) { showErr("이메일과 비밀번호를 입력해 주세요."); return; }
+        if (c.pw.length < 6) { showErr("비밀번호는 6자 이상으로 정해 주세요."); return; }
+        if (c.pw !== p2) { showErr("두 비밀번호가 서로 달라요."); return; }
+        showErr("");
+        signUpBtn.disabled = true;
+        signUpBtn.textContent = "만드는 중…";
+        try {
+          if (!(await ensureSb())) throw new Error("클라우드에 연결하지 못했어요. 잠시 후 다시 시도해 주세요.");
+          var res = await sb.auth.signUp({
+            email: c.email,
+            password: c.pw,
+            options: { emailRedirectTo: teamSiteUrl() }
+          });
+          if (res.error) throw res.error;
+          if (res.data && res.data.session) {
+            account.announce = true;
+            closeSheet();
+            toast("계정을 만들었어요. 기록이 이제 모든 기기에서 이어져요.");
+          } else {
+            showErr("확인 메일을 보냈어요. 메일함에서 링크를 누른 뒤 이 화면에서 다시 로그인해 주세요.");
+            signUpBtn.disabled = false;
+            signUpBtn.textContent = "계정 만들기";
+          }
+        } catch (err) {
+          showErr(authErrorText(err));
+          signUpBtn.disabled = false;
+          signUpBtn.textContent = "계정 만들기";
+        }
+      });
+    }
+
+    var resetBtn = $("#accReset");
+    if (resetBtn) {
+      resetBtn.addEventListener("click", async function () {
+        var c = readCreds();
+        if (!c.email) { showErr("이메일을 먼저 입력해 주세요."); return; }
+        showErr("");
+        resetBtn.disabled = true;
+        resetBtn.textContent = "보내는 중…";
+        try {
+          if (!(await ensureSb())) throw new Error("클라우드에 연결하지 못했어요. 잠시 후 다시 시도해 주세요.");
+          var res = await sb.auth.resetPasswordForEmail(c.email, { redirectTo: teamSiteUrl() });
+          if (res.error) throw res.error;
+          showErr("");
+          toast("재설정 링크를 메일로 보냈어요. 링크를 누른 뒤 계정 화면에서 새 비밀번호를 정하세요.");
+        } catch (err) {
+          showErr(authErrorText(err));
+        } finally {
+          resetBtn.disabled = false;
+          resetBtn.textContent = "비밀번호를 잊었어요";
+        }
+      });
+    }
+  }
+
   // ---------- 탭 ----------
   function setTab(name) {
     if (["home", "breath", "schedule", "buddy"].indexOf(name) < 0) name = "home";
@@ -1759,7 +2514,7 @@
   }
 
   function saveLogbook() {
-    lsSet("sfd.logbook", state.logbook);
+    pSet("sfd.logbook", state.logbook);
   }
 
   function renderRadarChart() {
@@ -1958,6 +2713,11 @@
 
   // ---------- 이벤트 바인딩 ----------
   function bindUI() {
+    var accountBtn = $("#accountOpenBtn");
+    if (accountBtn) {
+      accountBtn.addEventListener("click", function () { openAccountSheet(account.userId ? "account" : "signin"); });
+    }
+
     $$(".tabbar .tab").forEach(function (b) {
       b.addEventListener("click", function () { setTab(b.getAttribute("data-tab")); });
     });
@@ -2422,13 +3182,13 @@
       if (!window.confirm("이 기록을 삭제할까요?")) return;
       var list = lsGet("sfd.history", []);
       list = Array.isArray(list) ? list.filter(function (h) { return h.id !== id; }) : [];
-      lsSet("sfd.history", list);
+      pSet("sfd.history", list);
       renderHistory();
     });
     $("#clearHistoryBtn").addEventListener("click", function () {
       if (!state.history.length) { toast("삭제할 기록이 없어요."); return; }
       if (!window.confirm("훈련 기록을 모두 삭제할까요?")) return;
-      lsSet("sfd.history", []);
+      pSet("sfd.history", []);
       renderHistory();
       toast("기록을 모두 지웠어요.");
     });
@@ -3011,7 +3771,7 @@
   }
 
   function eqSavePrefs() {
-    lsSet(EQ_STORE, { unit: eq.unit, parseMode: eq.parseMode, scale: eq.scale });
+    pSet(EQ_STORE, { unit: eq.unit, parseMode: eq.parseMode, scale: eq.scale });
   }
 
   function eqClock(ms) {
@@ -4004,6 +4764,7 @@
     if (freeLogDateEl) freeLogDateEl.value = todayKey();
 
     bindUI();
+    updateAccountPill();
     initEqPage();
     renderHome();
     renderBreath();
@@ -4109,6 +4870,7 @@
         var out = canvas.toDataURL("image/jpeg", 0.88);
         try {
           localStorage.setItem(LICENSE_KEY, out);
+          queueKeySave(LICENSE_KEY);
           renderLicenseVault();
           toast("자격증 사진이 저장됐어요");
         } catch (err) {
@@ -4146,6 +4908,7 @@
     if (deleteBtn) {
       deleteBtn.addEventListener("click", function () {
         try { localStorage.removeItem(LICENSE_KEY); } catch (e) { /* ignore */ }
+        queueKeySave(LICENSE_KEY);
         renderLicenseVault();
         toast("자격증 사진을 지웠어요");
       });

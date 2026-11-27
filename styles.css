@@ -3708,3 +3708,115 @@ svg {
 .eq-ghost[hidden] { display: none !important; }
 
 .eq-log-line > div:first-child { display: flex; align-items: baseline; gap: 4px; flex-wrap: wrap; }
+
+/* ---------- 계정 · 기기 간 동기화 (v1.4.2) ---------- */
+.account-top-btn { position: relative; }
+
+.account-top-btn.is-on {
+  color: #fff;
+  border-color: rgba(57, 217, 138, 0.5);
+  background: rgba(57, 217, 138, 0.16);
+}
+
+.account-dot {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #39d98a;
+  box-shadow: 0 0 0 2px rgba(14, 17, 22, 0.6);
+}
+
+.account-dot[hidden] { display: none !important; }
+.account-dot.is-busy { background: #f6b81d; animation: accPulse 1s ease-in-out infinite; }
+
+@keyframes accPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+.acc-state {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--teal-soft);
+  margin-bottom: 12px;
+}
+
+.acc-state .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #2bb673;
+  box-shadow: 0 0 0 4px rgba(43, 182, 115, 0.16);
+  flex: none;
+}
+
+.acc-state p { font-size: 12.5px; color: var(--ink-2); line-height: 1.5; }
+.acc-state strong { display: block; color: var(--ink); font-size: 14px; font-weight: 700; }
+
+.acc-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 6px;
+  padding: 0 2px;
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+.acc-meta b { color: var(--ink-2); font-weight: 650; }
+
+.acc-items {
+  list-style: none;
+  margin: 4px 0 12px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.acc-items li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border-radius: 11px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+
+.acc-items li svg { width: 15px; height: 15px; color: #2bb673; flex: none; }
+
+.acc-link {
+  display: block;
+  width: 100%;
+  margin-top: 10px;
+  padding: 9px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--teal);
+  text-align: center;
+  background: none;
+  border: none;
+}
+
+.acc-link:active { opacity: 0.65; }
+.acc-link[hidden] { display: none !important; }
+
+.acc-sub { margin: 14px 0 0; font-size: 11.5px; line-height: 1.55; color: var(--ink-3); }
+.acc-sub b { color: var(--ink-2); }
+
+.form-row input[type="email"],
+.form-row input[type="password"],
+.form-row input[type="text"] { width: 100%; }
+
+.acc-err { margin: 10px 0 0; font-size: 12px; line-height: 1.5; color: var(--danger); }
+.acc-err[hidden] { display: none !important; }
