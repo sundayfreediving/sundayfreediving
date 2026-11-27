@@ -1309,6 +1309,248 @@ svg {
   white-space: pre-wrap;
 }
 
+/* ---------- 이 달의 정기트레이닝 ---------- */
+.monthly-training-card { padding: 13px 15px 11px; }
+
+.mt-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.mt-title {
+  font-size: 13px;
+  font-weight: 750;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+
+.mt-month {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.mt-list { display: flex; flex-direction: column; gap: 1px; }
+.mt-list[hidden] { display: none; }
+
+.mt-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 30px;
+  border-top: 1px solid var(--line);
+}
+
+.mt-row:first-child { border-top: 0; }
+
+.mt-main {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 1;
+  min-width: 0;
+  padding: 6px 0;
+  text-align: left;
+  font-size: 13px;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.mt-date { font-weight: 750; letter-spacing: -0.01em; }
+.mt-sep { color: var(--ink-3); font-weight: 600; }
+.mt-time { color: var(--ink-2); font-weight: 650; }
+.mt-place {
+  color: var(--ink-2);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mt-count {
+  flex: none;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--teal);
+  background: var(--teal-soft);
+  border-radius: 7px;
+  padding: 2px 7px;
+}
+
+.mt-empty {
+  font-size: 12.5px;
+  color: var(--ink-3);
+  padding: 4px 0 2px;
+}
+
+/* ---------- 달력 신청자 이름 ---------- */
+.cal-cell.has-names {
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 0;
+  padding: 4px 1px 2px;
+  font-size: 13px;
+  line-height: 1.1;
+}
+
+.cal-cell.has-names.is-today { padding-top: 4px; padding-bottom: 2px; }
+
+.cal-names {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  margin-top: 2px;
+  overflow: hidden;
+}
+
+.cal-names b {
+  max-width: 100%;
+  font-size: 8px;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.03em;
+  color: var(--ink-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cal-names b.more { color: var(--ink-3); font-size: 7.5px; }
+.cal-cell.is-selected .cal-names b { color: rgba(20, 23, 29, 0.82); }
+.cal-cell.has-names .cal-dots { display: none; }
+.cal-cell.has-names .cal-today-tag { display: none; }
+
+.admin-badge-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0 2px;
+  padding: 7px 10px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--teal);
+  background: var(--teal-soft);
+}
+
+.admin-badge-line svg { width: 14px; height: 14px; }
+
+/* ---------- 일정 신청 ---------- */
+.event-signup {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 11px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.reg-line {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.reg-count {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.reg-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.reg-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 23px;
+  padding: 0 8px;
+  border-radius: 8px;
+  font-size: 11.5px;
+  font-weight: 650;
+  color: var(--ink-2);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  max-width: 100%;
+}
+
+.reg-chip.is-mine {
+  color: var(--teal);
+  background: var(--teal-soft);
+  border-color: transparent;
+}
+
+.reg-chip.is-admin { padding-right: 2px; }
+
+.reg-x {
+  width: 19px;
+  height: 19px;
+  margin-left: 1px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--ink-3);
+  background: var(--surface-3);
+}
+
+.reg-x:hover { color: #fff; background: var(--danger); }
+
+.signup-btn {
+  flex: none;
+  height: 36px;
+  padding: 0 16px;
+  border-radius: 11px;
+  font-size: 13px;
+  font-weight: 750;
+  letter-spacing: -0.01em;
+  color: #14171d;
+  background: linear-gradient(150deg, #ffd046, #f6b81d);
+  box-shadow: 0 6px 14px rgba(246, 184, 29, 0.28);
+}
+
+.signup-btn.is-cancel {
+  color: var(--danger);
+  background: var(--danger-soft);
+  box-shadow: none;
+}
+
+.signup-btn[disabled] {
+  color: var(--ink-3);
+  background: var(--surface-2);
+  box-shadow: none;
+}
+
+.confirm-text {
+  font-size: 15px;
+  font-weight: 650;
+  line-height: 1.55;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  padding: 6px 0 2px;
+}
+
+.confirm-sub {
+  margin-top: 6px;
+  color: var(--ink-3);
+  font-size: 12.5px;
+}
+
 .view-title-row {
   display: flex;
   flex-direction: row;

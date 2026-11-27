@@ -9,7 +9,6 @@
 
   var CFG = window.SFD_CONFIG || {};
   var ADMIN_EMAIL = String(CFG.ADMIN_EMAIL || "sundayfreediving@gmail.com").toLowerCase();
-  var LOCAL_PIN = String(CFG.LOCAL_ADMIN_PIN || "0619");
   var WEEK = ["일", "월", "화", "수", "목", "금", "토"];
   var RING_R = 142;
   var RING_C = 2 * Math.PI * RING_R;
@@ -244,8 +243,8 @@
     tableType: "co2",
     pb: 150,
     isAdmin: false,
-    adminPin: "",
     adminEmail: "",
+    registrations: [],
     history: [],
     logbook: [],
     logFilter: "ALL",
@@ -311,9 +310,8 @@
 
   function applySession(session) {
     var email = session && session.user ? String(session.user.email || "") : "";
-    var admin = email.toLowerCase() === ADMIN_EMAIL;
-    // 관리자 이메일이라도 관리자 번호를 입력하기 전에는 관리자 도구를 열지 않습니다.
-    if (admin && useCloud() && !state.adminPin) admin = false;
+    // 관리자 계정(sundayfreediving@gmail.com)으로 로그인하면 자동으로 관리자 모드입니다.
+    var admin = !!(email && email.toLowerCase() === ADMIN_EMAIL);
     state.adminEmail = email;
     if (admin !== state.isAdmin) {
       state.isAdmin = admin;
@@ -738,6 +736,9 @@
     }
     updateAccountPill();
     refreshAccountSheet();
+    if (account.userId) {
+      refreshRegistrations().then(function () { refreshScheduleViews(); }).catch(function () {});
+    }
   }
 
   async function endAccountSession(reload) {
@@ -854,6 +855,16 @@
     };
   }
 
+  function mapRegistration(row) {
+    return {
+      id: row.id,
+      schedule_id: row.schedule_id,
+      user_id: row.user_id,
+      name: row.name || "",
+      created_at: row.created_at || ""
+    };
+  }
+
   function mapPost(row) {
     return {
       id: row.id,
@@ -923,8 +934,19 @@
       state.schedules = localSchedules();
     }
     sortSchedules(state.schedules);
-    renderCalendar();
-    renderDay();
+    refreshScheduleViews();
+  }
+
+  async function refreshRegistrations() {
+    if (!useCloud() || !sb) {
+      state.registrations = [];
+      return;
+    }
+    var res = await sb.from("schedule_registrations")
+      .select("id,schedule_id,user_id,name,created_at")
+      .order("created_at", { ascending: true });
+    if (res.error) throw res.error;
+    state.registrations = (res.data || []).map(mapRegistration);
   }
 
   async function refreshPosts() {
@@ -1028,7 +1050,6 @@
         });
       } else {
         res = await sb.rpc("admin_update_buddy_post", {
-          p_pin: state.adminPin,
           p_id: id,
           p_content: payload.content,
           p_tag_date: payload.tag_date || null,
@@ -1057,7 +1078,6 @@
         res = await sb.rpc("delete_buddy_post", { p_id: id, p_token: tok });
       } else {
         res = await sb.rpc("admin_delete_buddy_post", {
-          p_pin: state.adminPin,
           p_id: id
         });
       }
@@ -1079,8 +1099,8 @@
       if (tok) {
         await sb.rpc("sync_my_avatar", { p_token: tok, p_avatar_url: val });
       }
-      if (state.isAdmin && state.adminPin) {
-        await sb.rpc("admin_sync_brand_avatar", { p_pin: state.adminPin, p_avatar_url: val });
+      if (state.isAdmin) {
+        await sb.rpc("admin_sync_brand_avatar", { p_avatar_url: val });
       }
       await refreshPosts();
       return;
@@ -1116,7 +1136,6 @@
     if (!state.isAdmin) throw new Error("관리자만 삭제할 수 있어요.");
     if (useCloud()) {
       var res = await sb.rpc("admin_delete_buddy_comment", {
-        p_pin: state.adminPin,
         p_id: id
       });
       if (res.error) throw res.error;
@@ -1746,11 +1765,24 @@
     var cells = Math.ceil((offset + days) / 7) * 7;
     var counts = {};
     var levelsByDate = {};
+    var namesByDate = {};
     state.schedules.forEach(function (s) {
       if (!s.class_date) return;
       counts[s.class_date] = (counts[s.class_date] || 0) + 1;
       if (!levelsByDate[s.class_date]) levelsByDate[s.class_date] = [];
       levelsByDate[s.class_date].push(s.level || "기타");
+    });
+    // 신청자 이름을 달력에 바로 보여 줍니다 (같은 사람은 하루에 한 번만)
+    var seen = {};
+    state.schedules.forEach(function (s) {
+      if (!s.class_date) return;
+      registrationsOf(s.id).forEach(function (r) {
+        var mark = s.class_date + "|" + r.user_id;
+        if (seen[mark]) return;
+        seen[mark] = true;
+        if (!namesByDate[s.class_date]) namesByDate[s.class_date] = [];
+        namesByDate[s.class_date].push(r.name);
+      });
     });
 
     var html = "";
@@ -1764,21 +1796,31 @@
       var key = dateKey(dt);
       var dow = dt.getDay();
       var isToday = key === todayKey();
+      var names = namesByDate[key] || [];
       var cls = "cal-cell";
       if (dow === 0 || dow === 6) cls += " is-sun-sat";
       if (isToday) cls += " is-today";
       if (key === state.selected) cls += " is-selected";
       if (counts[key]) cls += " has-events";
-      var label = (m + 1) + "월 " + dayNum + "일 " + WEEK[dow] + "요일" + (isToday ? " 오늘" : "") + (counts[key] ? ", 수업 " + counts[key] + "개" : "");
+      if (names.length) cls += " has-names";
+      var label = (m + 1) + "월 " + dayNum + "일 " + WEEK[dow] + "요일" + (isToday ? " 오늘" : "") + (counts[key] ? ", 수업 " + counts[key] + "개" : "")
+        + (names.length ? ", 신청 " + names.join(", ") : "");
       var todayTag = isToday ? '<span class="cal-today-tag">오늘</span>' : "";
       var dots = "";
-      if (levelsByDate[key]) {
+      if (levelsByDate[key] && !names.length) {
         dots = '<span class="cal-dots">' + levelsByDate[key].slice(0, 3).map(function (lv) {
           return '<i style="background:' + (LEVEL_COLORS[lv] || LEVEL_COLORS["기타"]) + '"></i>';
         }).join("") + '</span>';
       }
+      var namesHtml = "";
+      if (names.length) {
+        namesHtml = '<span class="cal-names">'
+          + names.slice(0, 2).map(function (n) { return "<b>" + esc(n) + "</b>"; }).join("")
+          + (names.length > 2 ? '<b class="more">+' + (names.length - 2) + "</b>" : "")
+          + '</span>';
+      }
       html += '<button type="button" class="' + cls + '" data-key="' + key + '" '
-        + 'aria-pressed="' + (key === state.selected) + '" aria-label="' + label + '">' + dayNum + todayTag + dots + '</button>';
+        + 'aria-pressed="' + (key === state.selected) + '" aria-label="' + esc(label) + '">' + dayNum + todayTag + dots + namesHtml + '</button>';
     }
     calGridEl.innerHTML = html;
   }
@@ -1791,15 +1833,48 @@
     dayCountEl.textContent = list.length ? list.length + "개 수업" : "";
     dayEmptyEl.hidden = list.length > 0;
 
+    var me = myUserId();
     dayListEl.innerHTML = list.map(function (s) {
       var color = LEVEL_COLORS[s.level] || LEVEL_COLORS["기타"];
       var time = s.start_time || "";
       if (s.end_time) time += " – " + s.end_time;
-      var actions = '<div class="event-actions">'
-        + '<button type="button" data-act="edit" data-id="' + esc(s.id) + '" aria-label="수업 수정"><svg><use href="#i-edit"/></svg></button>'
-        + '<button type="button" class="del" data-act="del" data-id="' + esc(s.id) + '" aria-label="수업 삭제"><svg><use href="#i-trash"/></svg></button>'
-        + '</div>';
-      return '<article class="event-card" data-id="' + esc(s.id) + '" style="--lv:' + color + ';cursor:pointer">'
+      var regs = registrationsOf(s.id);
+      var mine = myRegistration(s.id);
+      var cap = (s.capacity === null || s.capacity === undefined || isNaN(s.capacity)) ? null : s.capacity;
+      var full = cap !== null && regs.length >= cap && !mine;
+
+      var actions = "";
+      if (state.isAdmin) {
+        actions = '<div class="event-actions">'
+          + '<button type="button" data-act="edit" data-id="' + esc(s.id) + '" aria-label="수업 수정"><svg><use href="#i-edit"/></svg></button>'
+          + '<button type="button" class="del" data-act="del" data-id="' + esc(s.id) + '" aria-label="수업 삭제"><svg><use href="#i-trash"/></svg></button>'
+          + '</div>';
+      }
+
+      var chips = regs.map(function (r) {
+        var isMe = r.user_id === me;
+        var label = esc(r.name) + (isMe ? " (나)" : "");
+        if (state.isAdmin) {
+          return '<span class="reg-chip' + (isMe ? " is-mine" : "") + '">' + label
+            + '<button type="button" class="reg-x" data-act="cancel-user" data-id="' + esc(s.id) + '"'
+            + ' data-user="' + esc(r.user_id) + '" data-name="' + esc(r.name) + '"'
+            + ' aria-label="' + esc(r.name) + ' 신청 취소">×</button></span>';
+        }
+        return '<span class="reg-chip' + (isMe ? " is-mine" : "") + '">' + label + '</span>';
+      }).join("");
+
+      var signupBtn;
+      if (mine) {
+        signupBtn = '<button type="button" class="signup-btn is-cancel" data-act="cancel" data-id="' + esc(s.id) + '">신청 취소</button>';
+      } else if (full) {
+        signupBtn = '<button type="button" class="signup-btn" disabled>정원 마감</button>';
+      } else {
+        signupBtn = '<button type="button" class="signup-btn" data-act="signup" data-id="' + esc(s.id) + '">신청</button>';
+      }
+
+      var seat = "신청 " + regs.length + "명" + (cap !== null ? " / 정원 " + cap + "명" : "");
+
+      return '<article class="event-card" data-id="' + esc(s.id) + '" style="--lv:' + color + '">'
         + '<div class="event-top">'
         + '<h3 class="event-title">' + esc(s.title) + '</h3>'
         + actions
@@ -1808,17 +1883,218 @@
         + '<span class="mi"><svg><use href="#i-clock"/></svg>' + esc(time || "시간 미정") + '</span>'
         + (s.location ? '<span class="mi"><svg><use href="#i-pin"/></svg>' + esc(s.location) + '</span>' : '')
         + (s.level ? '<span class="chip">' + esc(s.level) + '</span>' : '')
-        + (s.capacity !== null && !isNaN(s.capacity) ? '<span class="mi">정원 ' + s.capacity + '명</span>' : '')
         + '</div>'
         + (s.notes ? '<p class="event-notes">' + esc(s.notes) + '</p>' : '')
+        + '<div class="event-signup">'
+        + '<div class="reg-line"><span class="reg-count">' + esc(seat) + '</span>'
+        + (chips ? '<div class="reg-chips">' + chips + '</div>' : '')
+        + '</div>'
+        + signupBtn
+        + '</div>'
         + '</article>';
     }).join("");
   }
 
+  // ---------- 이 달의 정기트레이닝 ----------
+  var mtListEl = $("#mtList");
+  var mtEmptyEl = $("#mtEmpty");
+  var mtMonthEl = $("#mtMonthLabel");
+
+  // 정기트레이닝 판별: 과정이 '트레이닝'이거나 제목에 '트레이닝'이 들어간 일정.
+  // '개인 트레이닝'은 정기트레이닝으로 보지 않습니다.
+  function isRegularTraining(s) {
+    var title = String(s.title || "");
+    if (/개인\s*트레이닝/.test(title)) return false;
+    return s.level === "트레이닝" || title.indexOf("트레이닝") >= 0;
+  }
+
+  function renderMonthlyTraining() {
+    if (!mtListEl) return;
+    var y = state.viewMonth.getFullYear();
+    var m = state.viewMonth.getMonth();
+    if (mtMonthEl) mtMonthEl.textContent = (m + 1) + "월";
+
+    var list = state.schedules.filter(function (s) {
+      if (!isRegularTraining(s) || !s.class_date) return false;
+      var d = keyToDate(s.class_date);
+      return d.getFullYear() === y && d.getMonth() === m;
+    }).sort(function (a, b) {
+      if (a.class_date === b.class_date) return String(a.start_time).localeCompare(String(b.start_time));
+      return String(a.class_date).localeCompare(String(b.class_date));
+    });
+
+    if (mtEmptyEl) mtEmptyEl.hidden = list.length > 0;
+    mtListEl.hidden = list.length === 0;
+
+    mtListEl.innerHTML = list.map(function (s) {
+      var count = registrationsOf(s.id).length;
+      return '<li class="mt-row">'
+        + '<button type="button" class="mt-main" data-mt-id="' + esc(s.id) + '" data-key="' + esc(s.class_date) + '">'
+        + '<span class="mt-date">' + esc(shortDate(s.class_date)) + '</span>'
+        + '<span class="mt-sep">·</span>'
+        + '<span class="mt-time">' + esc(s.start_time || "시간 미정") + '</span>'
+        + '<span class="mt-sep">·</span>'
+        + '<span class="mt-place">' + esc(s.location || "장소 미정") + '</span>'
+        + '</button>'
+        + (count ? '<span class="mt-count">' + count + '명</span>' : '')
+        + '</li>';
+    }).join("");
+  }
+
+  // ---------- 일정 신청 / 취소 ----------
+  function myUserId() { return account.userId || ""; }
+
+  function registrationsOf(scheduleId) {
+    return state.registrations.filter(function (r) { return r.schedule_id === scheduleId; });
+  }
+
+  function myRegistration(scheduleId) {
+    var uid = myUserId();
+    if (!uid) return null;
+    var list = registrationsOf(scheduleId);
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].user_id === uid) return list[i];
+    }
+    return null;
+  }
+
+  function daysUntilKey(key) {
+    if (!key) return null;
+    var d = keyToDate(key);
+    if (isNaN(d.getTime())) return null;
+    var today = startOfToday();
+    return Math.round((d.getTime() - today.getTime()) / 86400000);
+  }
+
+  function refreshScheduleViews() {
+    renderCalendar();
+    renderDay();
+    renderMonthlyTraining();
+  }
+
+  async function doRegister(schedule, name) {
+    if (!useCloud() || !sb) {
+      toast("로그인하면 일정을 신청할 수 있어요");
+      openAccountSheet("signin");
+      return;
+    }
+    state.busy = true;
+    try {
+      var res = await sb.rpc("register_schedule", { p_schedule_id: schedule.id, p_name: name });
+      if (res.error) throw res.error;
+      await refreshRegistrations();
+      refreshScheduleViews();
+      closeSheet();
+      toast(name + "님, 신청 완료! 달력에도 표시했어요");
+    } catch (err) {
+      console.error(err);
+      toast("신청하지 못했어요: " + errText(err));
+    } finally {
+      state.busy = false;
+    }
+  }
+
+  async function doCancel(schedule, userId, name) {
+    if (!useCloud() || !sb) return;
+    state.busy = true;
+    try {
+      var res = await sb.rpc("cancel_schedule_registration", {
+        p_schedule_id: schedule.id,
+        p_user_id: userId || null
+      });
+      if (res.error) throw res.error;
+      await refreshRegistrations();
+      refreshScheduleViews();
+      closeSheet();
+      toast((name ? name + "님 " : "") + "신청을 취소했어요");
+    } catch (err) {
+      console.error(err);
+      toast("취소하지 못했어요: " + errText(err));
+    } finally {
+      state.busy = false;
+    }
+  }
+
+  function startSignup(schedule) {
+    if (!account.userId) {
+      toast("로그인하면 일정을 신청할 수 있어요");
+      openAccountSheet("signin");
+      return;
+    }
+    var name = String(prefs.nickname || "").trim();
+    if (!name) { openSignupNameSheet(schedule); return; }
+    doRegister(schedule, name);
+  }
+
+  function openSignupNameSheet(schedule) {
+    openSheet("신청자 이름",
+      '<p class="sheet-text"><b>' + esc(schedule.title) + '</b><br>달력에 표시할 이름을 적어 주세요. 프로필 닉네임으로 저장됩니다.</p>'
+      + '<div class="form-row"><label for="signupName">이름</label>'
+      + '<input id="signupName" type="text" maxlength="20" placeholder="예: 김병선" autocomplete="name"></div>'
+      + '<div class="form-actions"><button type="button" class="btn-primary" id="signupNameBtn" style="flex:1">이 이름으로 신청</button></div>'
+    );
+
+    var inputEl = $("#signupName");
+    var btnEl = $("#signupNameBtn");
+    async function submit() {
+      var name = String(inputEl.value || "").trim();
+      if (!name) { toast("이름을 입력해 주세요."); return; }
+      prefs.nickname = name;
+      savePrefs();
+      var profileNick = $("#profileNickname");
+      if (profileNick) profileNick.value = name;
+      btnEl.disabled = true;
+      await doRegister(schedule, name);
+      btnEl.disabled = false;
+    }
+    if (btnEl) btnEl.addEventListener("click", submit);
+    if (inputEl) {
+      inputEl.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") { e.preventDefault(); submit(); }
+      });
+      setTimeout(function () { inputEl.focus(); }, 420);
+    }
+  }
+
+  function startCancel(schedule, userId, name) {
+    if (!account.userId) {
+      toast("로그인하면 취소할 수 있어요");
+      openAccountSheet("signin");
+      return;
+    }
+    var days = daysUntilKey(schedule.class_date);
+    // 수업일 3일 전부터 당일까지는 환불 불가 안내를 먼저 보여 줍니다.
+    if (days !== null && days <= 3) {
+      openCancelWarning(schedule, userId, name);
+      return;
+    }
+    var who = name && name !== String(prefs.nickname || "").trim() ? name + "님 " : "";
+    if (!window.confirm(who + "신청을 취소할까요?")) return;
+    doCancel(schedule, userId, name);
+  }
+
+  function openCancelWarning(schedule, userId, name) {
+    openSheet("신청 취소",
+      '<p class="confirm-text">3일전 취소는 입장료 환불이 불가하며, 수업의 경우 1회 차감됩니다. 그래도 취소하시겠습니까?</p>'
+      + '<p class="sheet-text confirm-sub">' + esc(schedule.title) + ' · ' + esc(shortDate(schedule.class_date)) + '</p>'
+      + '<div class="form-actions">'
+      + '<button type="button" class="btn-ghost" id="cancelNo" style="flex:1">아니오</button>'
+      + '<button type="button" class="btn-danger" id="cancelYes" style="flex:1">예</button>'
+      + '</div>'
+    );
+    var noBtn = $("#cancelNo");
+    if (noBtn) noBtn.addEventListener("click", closeSheet);
+    var yesBtn = $("#cancelYes");
+    if (yesBtn) yesBtn.addEventListener("click", function () {
+      yesBtn.disabled = true;
+      doCancel(schedule, userId, name);
+    });
+  }
+
   function renderScheduleChrome() {
-    addScheduleBtn.hidden = false;
-    var adminTopBtn = $("#adminOpenBtn");
-    if (adminTopBtn) adminTopBtn.classList.toggle("is-admin", !!state.isAdmin);
+    if (addScheduleBtn) addScheduleBtn.hidden = !state.isAdmin;
+    renderCalendar();
+    renderMonthlyTraining();
     renderDay();
   }
 
@@ -1832,8 +2108,7 @@
     } else {
       state.selected = dateKey(next);
     }
-    renderCalendar();
-    renderDay();
+    refreshScheduleViews();
   }
 
   // ---------- 수업 폼 ----------
@@ -1841,6 +2116,10 @@
   var LEVELS = ["AIDA1", "AIDA2", "AIDA3", "AIDA4", "트레이닝", "자율연습", "투어", "기타"];
 
   function openScheduleForm(item) {
+    if (!state.isAdmin) {
+      toast("일정 추가·수정은 관리자만 할 수 있어요.");
+      return;
+    }
     var isEdit = !!item;
     var s = item || {
       title: "", class_date: state.selected, start_time: "19:00", end_time: "21:00",
@@ -1922,8 +2201,7 @@
         closeSheet();
         state.selected = date;
         state.viewMonth = new Date(keyToDate(date).getFullYear(), keyToDate(date).getMonth(), 1);
-        renderCalendar();
-        renderDay();
+        refreshScheduleViews();
         toast(isEdit ? "수업을 수정했어요." : "수업을 추가했어요.");
       } catch (err) {
         console.error(err);
@@ -2102,119 +2380,6 @@
     });
   }
 
-  // ---------- 관리자 ----------
-  function setAdminSession(on, pin) {
-    state.isAdmin = !!on;
-    state.adminPin = on ? String(pin || "") : "";
-    state.adminEmail = on ? ADMIN_EMAIL : "";
-    if (!useCloud()) {
-      lsSet("sfd.admin", !!on);
-    } else {
-      try {
-        if (on) sessionStorage.setItem("sfd.adminPin", state.adminPin);
-        else sessionStorage.removeItem("sfd.adminPin");
-      } catch (e) { /* ignore */ }
-    }
-    renderScheduleChrome();
-    renderPosts();
-    if (on && prefs.avatar) {
-      syncProfileAvatarToPosts(prefs.avatar).catch(function () {});
-    }
-  }
-
-  function adminSheetHtml() {
-    if (state.isAdmin) {
-      var who = useCloud() ? "클라우드 관리자 모드" : "로컬 체험 모드";
-      return '<div class="admin-state"><span class="dot"></span><p><strong>관리자 모드</strong><br>'
-        + who + '</p></div>'
-        + '<div class="admin-menu">'
-        + '<button type="button" id="adminAddClass"><svg><use href="#i-plus"/></svg>수업일정 추가</button>'
-        + '<button type="button" id="adminGotoClasses"><svg><use href="#i-calendar"/></svg>수업일정 보기</button>'
-        + '<button type="button" class="danger" id="adminLogout"><svg><use href="#i-lock"/></svg>관리자 잠금</button>'
-        + '</div>'
-        + '<p class="sheet-note">수업일정 추가·수정·삭제와 버디 글·댓글 삭제는 관리자만 할 수 있어요.</p>';
-    }
-
-    var modeNotice = useCloud()
-      ? '수업일정 수정이나 버디 글 삭제를 하려면 <strong>관리자 번호</strong>를 입력하세요.'
-      : '<span class="preview-pill">로컬 체험 모드</span><br>Supabase 연결 전에는 이 기기에만 저장됩니다. <strong>관리자 번호</strong>를 입력하면 관리 화면을 쓸 수 있어요.';
-
-    return '<p class="sheet-text">' + modeNotice + '</p>'
-      + '<input class="pin-input" id="adminPin" type="password" inputmode="numeric" maxlength="8" placeholder="••••" aria-label="관리자 번호">'
-      + '<div class="form-actions"><button type="button" class="btn-primary" id="adminPinBtn" style="flex:1">관리자 모드 켜기</button></div>';
-  }
-
-  function openAdminSheet() {
-    openSheet(state.isAdmin ? "관리자" : "관리자 설정", adminSheetHtml());
-
-    if (state.isAdmin) {
-      $("#adminAddClass").addEventListener("click", function () {
-        closeSheet();
-        setTab("schedule");
-        setTimeout(function () { openScheduleForm(null); }, 320);
-      });
-      $("#adminGotoClasses").addEventListener("click", function () {
-        closeSheet();
-        setTab("schedule");
-      });
-      $("#adminLogout").addEventListener("click", function () {
-        setAdminSession(false, "");
-        closeSheet();
-        toast("관리자 모드를 잠갔어요.");
-      });
-      return;
-    }
-
-    var pinBtn = $("#adminPinBtn");
-    var pinInput = $("#adminPin");
-    async function tryPin() {
-      var pin = String(pinInput.value || "").trim();
-      if (!pin) { toast("관리자 번호를 입력해 주세요."); return; }
-
-      if (useCloud()) {
-        pinBtn.disabled = true;
-        pinBtn.textContent = "확인 중…";
-        try {
-          if (!sb) await ensureCloud();
-          var res = await sb.rpc("verify_admin_pin", { p_pin: pin });
-          if (res.error) throw res.error;
-          if (res.data === true) {
-            setAdminSession(true, pin);
-            closeSheet();
-            toast("관리자 모드로 전환했어요.");
-          } else {
-            pinInput.value = "";
-            toast("관리자 번호가 맞지 않아요.");
-            pinBtn.disabled = false;
-            pinBtn.textContent = "관리자 모드 켜기";
-          }
-        } catch (err) {
-          console.error(err);
-          toast("확인하지 못했어요: " + (err.message || "오류"));
-          pinBtn.disabled = false;
-          pinBtn.textContent = "관리자 모드 켜기";
-        }
-        return;
-      }
-
-      if (pin === LOCAL_PIN) {
-        setAdminSession(true, pin);
-        closeSheet();
-        toast("관리자 모드로 전환했어요.");
-      } else {
-        pinInput.value = "";
-        toast("관리자 번호가 맞지 않아요.");
-      }
-    }
-    if (pinBtn) pinBtn.addEventListener("click", tryPin);
-    if (pinInput) {
-      pinInput.addEventListener("keydown", function (e) {
-        if (e.key === "Enter") { e.preventDefault(); tryPin(); }
-      });
-      setTimeout(function () { pinInput.focus(); }, 420);
-    }
-  }
-
   // ---------- 계정 · 동기화 시트 ----------
   function authErrorText(err) {
     var msg = errText(err);
@@ -2239,6 +2404,7 @@
         return '<li><svg><use href="#i-check"/></svg>' + esc(PERSONAL_LABELS[k] || k) + '</li>';
       }).join("");
       return '<div class="acc-state"><span class="dot"></span><p><strong>' + esc(account.email || "로그인됨") + '</strong>이 계정으로 동기화 중</p></div>'
+        + (state.isAdmin ? '<p class="admin-badge-line"><svg><use href="#i-check"/></svg>관리자 모드 — 일정 추가·수정·삭제 가능</p>' : '')
         + '<div class="acc-meta"><span>마지막 동기화 · <b id="accLastSync">' + esc(lastSyncText()) + '</b></span></div>'
         + '<p class="acc-err" id="accSyncNote" hidden></p>'
         + '<div class="admin-menu">'
@@ -2471,8 +2637,6 @@
   function setTab(name) {
     if (["home", "breath", "schedule", "buddy"].indexOf(name) < 0) name = "home";
     state.tab = name;
-    var adminTopBtn = $("#adminOpenBtn");
-    if (adminTopBtn) adminTopBtn.hidden = (name !== "schedule");
     $$(".view").forEach(function (v) {
       v.classList.toggle("is-active", v.getAttribute("data-view") === name);
     });
@@ -2483,6 +2647,13 @@
       else b.removeAttribute("aria-current");
     });
     window.scrollTo({ top: 0, behavior: "smooth" });
+    if (name === "schedule") {
+      if (useCloud() && sb && state.cloudReady) {
+        refreshRegistrations().then(function () { refreshScheduleViews(); }).catch(function () {});
+      } else {
+        refreshScheduleViews();
+      }
+    }
   }
 
   // ---------- 홈 · 로그북 & 6각형 그래프 ----------
@@ -3217,8 +3388,7 @@
       var t = new Date();
       state.viewMonth = new Date(t.getFullYear(), t.getMonth(), 1);
       state.selected = todayKey();
-      renderCalendar();
-      renderDay();
+      refreshScheduleViews();
     });
     calGridEl.addEventListener("click", function (e) {
       var cell = e.target.closest("[data-key]");
@@ -3226,8 +3396,7 @@
       var key = cell.getAttribute("data-key");
       var wasSelected = state.selected === key;
       state.selected = key;
-      renderCalendar();
-      renderDay();
+      refreshScheduleViews();
       if (state.isAdmin && wasSelected) {
         var list = eventsOn(key);
         if (list.length === 1) openScheduleForm(list[0]);
@@ -3235,15 +3404,34 @@
       }
     });
     addScheduleBtn.addEventListener("click", function () { openScheduleForm(null); });
+    if (mtListEl) {
+      mtListEl.addEventListener("click", function (e) {
+        var row = e.target.closest("[data-mt-id]");
+        if (!row) return;
+        var key = row.getAttribute("data-key");
+        if (!key) return;
+        var d = keyToDate(key);
+        state.viewMonth = new Date(d.getFullYear(), d.getMonth(), 1);
+        state.selected = key;
+        refreshScheduleViews();
+        if (dayLabelEl) dayLabelEl.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    }
     dayListEl.addEventListener("click", async function (e) {
       var btn = e.target.closest("[data-act]");
       if (btn) {
         var id = btn.getAttribute("data-id");
         var item = state.schedules.filter(function (s) { return s.id === id; })[0];
         if (!item) return;
-        if (btn.getAttribute("data-act") === "edit") {
-          openScheduleForm(item);
-        } else {
+        var act = btn.getAttribute("data-act");
+        if (act === "edit") { openScheduleForm(item); return; }
+        if (act === "signup") { startSignup(item); return; }
+        if (act === "cancel") { startCancel(item, myUserId(), String(prefs.nickname || "").trim()); return; }
+        if (act === "cancel-user") {
+          startCancel(item, btn.getAttribute("data-user"), btn.getAttribute("data-name"));
+          return;
+        }
+        if (act === "del") {
           if (!window.confirm("'" + item.title + "' 수업을 삭제할까요?")) return;
           try {
             await deleteScheduleRecord(id);
@@ -3259,7 +3447,7 @@
       if (!card) return;
       var cardId = card.getAttribute("data-id");
       var cardItem = state.schedules.filter(function (s) { return s.id === cardId; })[0];
-      if (cardItem) openScheduleForm(cardItem);
+      if (cardItem && state.isAdmin) openScheduleForm(cardItem);
     });
 
     // 프로필 만들기
@@ -3650,8 +3838,7 @@
       });
     })();
 
-    // 관리자
-    $("#adminOpenBtn").addEventListener("click", openAdminSheet);
+    // 공용 시트
     $("#sheetClose").addEventListener("click", closeSheet);
     backdropEl.addEventListener("click", closeSheet);
     document.addEventListener("keydown", function (e) {
@@ -5022,7 +5209,7 @@
     state.tableType = prefs.tableType;
     state.history = lsGet("sfd.history", []);
     state.logbook = lsGet("sfd.logbook", []);
-    state.isAdmin = !cloudConfigured() ? lsGet("sfd.admin", false) === true : false;
+    state.isAdmin = false;
     state.viewMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
     state.selected = todayKey();
     var logDateEl = $("#logDateInput");
@@ -5055,7 +5242,6 @@
     if (!ok || !useCloud()) {
       // 클라우드 연결 실패 → 로컬 체험 모드로 계속 사용
       $("#modePill").hidden = false;
-      state.isAdmin = lsGet("sfd.admin", false) === true;
       seedIfNeeded();
       await refreshSchedules().catch(function () {});
       await refreshPosts().catch(function () {});
@@ -5066,19 +5252,7 @@
 
     $("#modePill").hidden = true;
     try {
-      var savedPin = "";
-      try { savedPin = sessionStorage.getItem("sfd.adminPin") || ""; } catch (e) { /* ignore */ }
-      if (savedPin && sb) {
-        var pinCheck = await sb.rpc("verify_admin_pin", { p_pin: savedPin });
-        if (!pinCheck.error && pinCheck.data === true) {
-          state.isAdmin = true;
-          state.adminPin = savedPin;
-          if (prefs.avatar) {
-            await sb.rpc("admin_sync_brand_avatar", { p_pin: savedPin, p_avatar_url: prefs.avatar }).catch(function () {});
-          }
-        }
-      }
-      await Promise.all([refreshSchedules(), refreshPosts()]);
+      await Promise.all([refreshSchedules(), refreshPosts(), refreshRegistrations()]);
     } catch (err) {
       console.error(err);
       toast("데이터를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.");
@@ -5216,9 +5390,20 @@
   // 서비스 워커 등록 (https 또는 localhost에서만)
   if ("serviceWorker" in navigator && location.protocol.indexOf("http") === 0) {
     window.addEventListener("load", function () {
-      navigator.serviceWorker.register("./sw.js").catch(function (err) {
+      navigator.serviceWorker.register("./sw.js", { updateViaCache: "none" }).then(function (reg) {
+        // 열 때마다 새 버전이 있는지 확인합니다.
+        reg.update().catch(function () {});
+        setInterval(function () { reg.update().catch(function () {}); }, 5 * 60 * 1000);
+      }).catch(function (err) {
         console.warn("[SFD] 서비스 워커 등록 실패:", err);
       });
+    });
+    // 새 서비스 워커가 제어를 잠으면 새 화면으로 한 번만 새로고침합니다.
+    var swReloaded = false;
+    navigator.serviceWorker.addEventListener("controllerchange", function () {
+      if (swReloaded) return;
+      swReloaded = true;
+      setTimeout(function () { window.location.reload(); }, 60);
     });
   }
 
