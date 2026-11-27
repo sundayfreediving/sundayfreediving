@@ -699,11 +699,15 @@
         archivePersonalTo(prevOwner);
         dropPersonalData();
         restorePersonalFrom(uid);
-      } else if (prevOwner === uid) {
-        restorePersonalFrom(uid);
       }
       setOwner(uid);
-      await mergeAccountData(adoptLocal);
+      if (prevOwner === uid) {
+        // 같은 계정으로 다시 연 경우: 이 기기 값은 그대로 두고 바뀐 것만 맞춤
+        await flushPendingSaves();
+        await pullChanged();
+      } else {
+        await mergeAccountData(adoptLocal);
+      }
       reloadPersonalState();
       startPullTimer();
       bindSyncListeners();
