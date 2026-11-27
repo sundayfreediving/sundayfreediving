@@ -8,7 +8,7 @@
 <meta name="theme-color" content="#0e1116">
 <meta name="color-scheme" content="dark">
 <meta name="format-detection" content="telephone=no">
-<link rel="manifest" href="./manifest.webmanifest?v=1.4.0">
+<link rel="manifest" href="./manifest.webmanifest?v=1.4.1">
 <link rel="icon" href="./icons/favicon-32.png" sizes="32x32" type="image/png">
 <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
 <link rel="apple-touch-startup-image" href="./icons/splash-1170x2532.png" media="(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3)">
@@ -21,7 +21,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="선데이">
-<link rel="stylesheet" href="./styles.css?v=1.4.0">
+<link rel="stylesheet" href="./styles.css?v=1.4.1">
 </head>
 <body>
 
@@ -138,7 +138,7 @@
 <div class="app" id="app">
   <header class="topbar">
     <div class="brand">
-      <span class="brand-mark" aria-hidden="true"><img src="./icons/brand-logo.png?v=1.4.0" alt=""></span>
+      <span class="brand-mark" aria-hidden="true"><img src="./icons/brand-logo.png?v=1.4.1" alt=""></span>
       <span class="brand-text">
         <strong>선데이프리다이빙</strong>
         <span class="brand-sub">
@@ -582,6 +582,30 @@
         </button>
         <div class="collapsible" id="eqLogBody">
           <div class="collapsible-inner">
+            <div class="eq-write">
+              <div class="eq-write-head">
+                <span>명령 보내기 <em>WRITE</em></span>
+                <span class="eq-write-target" id="eqWriteTarget">연결 안 됨</span>
+              </div>
+              <label class="eq-mini-field eq-write-select-field" id="eqWriteTargetField" hidden>
+                <span>보낼 특성</span>
+                <select id="eqWriteTargetSel"></select>
+              </label>
+              <div class="eq-write-presets" id="eqWritePresets"></div>
+              <div class="eq-write-custom">
+                <select class="eq-write-mode" id="eqWriteModeSel" aria-label="입력 형식">
+                  <option value="hex">Hex</option>
+                  <option value="ascii">ASCII</option>
+                </select>
+                <input class="eq-write-input" id="eqWriteInput" type="text" placeholder="01 02 또는 FF01" aria-label="보낼 명령" autocomplete="off" autocapitalize="characters" spellcheck="false">
+                <button class="eq-write-send" id="eqWriteSendBtn" type="button">보내기</button>
+              </div>
+              <label class="eq-write-crlf" for="eqWriteCrlf"><input type="checkbox" id="eqWriteCrlf"> ASCII 끝에 <code>\r\n</code> 붙이기</label>
+              <div class="eq-write-actions">
+                <button class="eq-mini-btn eq-auto-btn" id="eqAutoBtn" type="button">자동 신호 찾기</button>
+              </div>
+              <p class="eq-write-note">fff2처럼 <b>쓰기 가능한 특성</b>이 보이면 여기서 시작 신호를 보낼 수 있어요. 데이터가 10초 만에 끊기면 <b>자동 신호 찾기</b>로 600ms 간격 프리셋을 차례로 보내 반응하는 신호를 찾습니다.</p>
+            </div>
             <div class="eq-log-tools">
               <label class="eq-mini-field"><span>해석</span>
                 <select id="eqParseSel">
@@ -642,7 +666,7 @@
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-<script src="./config.js?v=1.4.0"></script>
-<script src="./app.js?v=1.4.0"></script>
+<script src="./config.js?v=1.4.1"></script>
+<script src="./app.js?v=1.4.1"></script>
 </body>
 </html>

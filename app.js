@@ -2995,7 +2995,10 @@
     useMinimal: false,
     manualClose: false,
     demoTimer: null,
-    demoPhase: 0
+    demoPhase: 0,
+    writers: [],
+    writeTarget: "",
+    auto: null
   };
 
   function eqLoadPrefs() {
@@ -3180,6 +3183,8 @@
     if (!bytes.length) return;
     eq.packets++;
     eq.lastAt = Date.now();
+    // 자동 신호 탐색 중에 첫 수신 패킷이 오면 바로 멈춥니다.
+    if (kind !== "READ" && eq.auto) eqAutoReact();
     var cands = eqCandidates(bytes, dv);
     eq.lastCands = cands;
     var pick = eqPickValue(cands, eq.parseMode);
@@ -3224,6 +3229,7 @@
     eq.lines.slice().reverse().forEach(function (l) {
       var row = document.createElement("div");
       row.className = "eq-log-line";
+      row.setAttribute("data-tag", l.tag);
       var head = document.createElement("div");
       var t = document.createElement("span");
       t.className = "eq-t";
@@ -3303,6 +3309,282 @@
     eqCopyText(text, "로그 " + eq.lines.length + "줄을 복사했어요");
   }
 
+  // =========================================================
+  //  명령 보내기 (Write) · fff2 같은 쓰기 특성으로 시작 신호 전송
+  // =========================================================
+  var EQ_WRITE_PRESETS = [
+    { label: "01", kind: "hex", text: "01" },
+    { label: "01 00", kind: "hex", text: "01 00" },
+    { label: "AA 01", kind: "hex", text: "AA 01" },
+    { label: "A0", kind: "hex", text: "A0" },
+    { label: "START", kind: "ascii", text: "START\r\n" },
+    { label: "AT", kind: "ascii", text: "AT\r\n" },
+    { label: "1", kind: "ascii", text: "1" },
+    { label: "S", kind: "ascii", text: "S" }
+  ];
+  var EQ_AUTO_INTERVAL = 600;
+
+  function eqIsConnected() {
+    return !!(eq.device && eq.device.gatt && eq.device.gatt.connected);
+  }
+
+  // "01 02" / "FF01" / "0x01, 0x02" 같은 입력을 바이트로 바꿉니다.
+  function eqParseHex(text) {
+    var cleaned = String(text || "").replace(/0x/gi, "").replace(/[\s,;:_-]/g, "");
+    if (!cleaned || !/^[0-9a-f]+$/i.test(cleaned) || cleaned.length % 2) return null;
+    var out = new Uint8Array(cleaned.length / 2);
+    for (var i = 0; i < out.length; i++) out[i] = parseInt(cleaned.substr(i * 2, 2), 16);
+    return out;
+  }
+
+  function eqAsciiBytes(text) {
+    var s = String(text || "");
+    if (typeof TextEncoder === "function") {
+      try { return new TextEncoder().encode(s); } catch (e) { /* 아래로 */ }
+    }
+    var out = new Uint8Array(s.length);
+    for (var i = 0; i < s.length; i++) out[i] = s.charCodeAt(i) & 0xff;
+    return out;
+  }
+
+  function eqPresetBytes(pr) {
+    return pr.kind === "hex" ? eqParseHex(pr.text) : eqAsciiBytes(pr.text);
+  }
+
+  // writeWithoutResponse를 우선하고, 없으면 응답형 쓰기로 내려갑니다.
+  function eqPickWriter() {
+    if (!eq.writers.length) return null;
+    if (eq.writeTarget) {
+      for (var i = 0; i < eq.writers.length; i++) {
+        if (eq.writers[i].uuid === eq.writeTarget) return eq.writers[i];
+      }
+    }
+    for (var j = 0; j < eq.writers.length; j++) {
+      if (eq.writers[j].writeNR) return eq.writers[j];
+    }
+    return eq.writers[0];
+  }
+
+  async function eqSendBytes(bytes, label) {
+    if (!bytes || !bytes.length) {
+      toast("보낼 데이터가 없어요");
+      return false;
+    }
+    if (!eqIsConnected()) {
+      toast("먼저 압력계에 연결해 주세요");
+      return false;
+    }
+    var w = eqPickWriter();
+    if (!w) {
+      toast("쓰기 가능한 특성을 찾지 못했어요");
+      return false;
+    }
+    var hex = eqHex(bytes);
+    var ascii = eqAscii(bytes);
+    var info = label ? "「" + label + "」 " + bytes.length + "B" : bytes.length + "B";
+    var tries = [];
+    if (w.writeNR && typeof w.ch.writeValueWithoutResponse === "function") {
+      tries.push({ name: "writeNR", call: function () { return w.ch.writeValueWithoutResponse(bytes); } });
+    }
+    if (w.write && typeof w.ch.writeValueWithResponse === "function") {
+      tries.push({ name: "writeResp", call: function () { return w.ch.writeValueWithResponse(bytes); } });
+    }
+    if (typeof w.ch.writeValue === "function") {
+      tries.push({ name: "write", call: function () { return w.ch.writeValue(bytes); } });
+    }
+    if (!tries.length) {
+      eqLogLine("ERR", "전송 실패", eqShortUuid(w.uuid) + " · 쓰기 메서드 없음", hex, ascii, info);
+      toast("이 특성으로는 보낼 수 없어요");
+      return false;
+    }
+    var lastErr = null;
+    for (var i = 0; i < tries.length; i++) {
+      try {
+        await tries[i].call();
+        eqLogLine("TX", "전송", eqShortUuid(w.uuid) + " · " + tries[i].name, hex, ascii, info);
+        return true;
+      } catch (err) {
+        lastErr = err;
+        eqLogLine("ERR", "전송 실패", eqShortUuid(w.uuid) + " · " + tries[i].name + " · " + (err && err.message || err), hex, ascii, info);
+      }
+    }
+    toast("명령을 보내지 못했어요: " + (lastErr && lastErr.message || lastErr));
+    return false;
+  }
+
+  function eqSendPreset(index) {
+    var pr = EQ_WRITE_PRESETS[index];
+    if (!pr) return;
+    eqSendBytes(eqPresetBytes(pr), pr.label);
+  }
+
+  function eqSendCustom() {
+    var input = $("#eqWriteInput");
+    var modeSel = $("#eqWriteModeSel");
+    var text = input ? input.value : "";
+    var mode = modeSel ? modeSel.value : "hex";
+    if (!String(text).trim()) {
+      toast("보낼 명령을 입력해 주세요");
+      if (input) input.focus();
+      return;
+    }
+    var bytes;
+    if (mode === "ascii") {
+      var crlf = $("#eqWriteCrlf");
+      bytes = eqAsciiBytes(crlf && crlf.checked ? text + "\r\n" : text);
+    } else {
+      bytes = eqParseHex(text);
+      if (!bytes) {
+        toast("Hex 형식이 아니에요 · 예: 01 02 또는 FF01");
+        if (input) input.focus();
+        return;
+      }
+    }
+    eqSendBytes(bytes, mode === "ascii" ? "ASCII 입력" : "Hex 입력");
+  }
+
+  // ---------- 쓰기 UI ----------
+  function eqRenderWritePresets() {
+    var wrap = $("#eqWritePresets");
+    if (!wrap || wrap.childNodes.length) return;
+    EQ_WRITE_PRESETS.forEach(function (pr, i) {
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "eq-write-btn";
+      btn.setAttribute("data-preset", String(i));
+      btn.textContent = pr.label;
+      btn.title = (pr.kind === "hex" ? "Hex " : "ASCII ") + pr.text.replace(/\r/g, "\\r").replace(/\n/g, "\\n");
+      wrap.appendChild(btn);
+    });
+  }
+
+  function eqRenderWriteTargets() {
+    var field = $("#eqWriteTargetField");
+    var sel = $("#eqWriteTargetSel");
+    if (!field || !sel) return;
+    if (eq.writers.length <= 1) {
+      field.hidden = true;
+      eq.writeTarget = "";
+      sel.textContent = "";
+      return;
+    }
+    field.hidden = false;
+    var keep = eq.writeTarget;
+    sel.textContent = "";
+    var autoOpt = document.createElement("option");
+    autoOpt.value = "";
+    autoOpt.textContent = "자동 (writeNR 우선)";
+    sel.appendChild(autoOpt);
+    eq.writers.forEach(function (w) {
+      var o = document.createElement("option");
+      o.value = w.uuid;
+      o.textContent = eqShortUuid(w.uuid) + " [" + w.flags + "]";
+      sel.appendChild(o);
+    });
+    var found = false;
+    for (var i = 0; i < eq.writers.length; i++) if (eq.writers[i].uuid === keep) found = true;
+    eq.writeTarget = found ? keep : "";
+    sel.value = eq.writeTarget;
+  }
+
+  function eqSyncWriteUI() {
+    var connected = eqIsConnected();
+    var can = connected && eq.writers.length > 0;
+    var targetEl = $("#eqWriteTarget");
+    if (targetEl) {
+      if (!connected) {
+        targetEl.textContent = "연결 안 됨";
+        targetEl.classList.remove("is-on");
+      } else if (!eq.writers.length) {
+        targetEl.textContent = "쓰기 특성 없음";
+        targetEl.classList.remove("is-on");
+      } else {
+        var w = eqPickWriter();
+        targetEl.textContent = eqShortUuid(w.uuid) + " [" + w.flags + "]";
+        targetEl.classList.add("is-on");
+      }
+    }
+    $$("#eqWritePresets .eq-write-btn").forEach(function (b) { b.disabled = !can; });
+    var sendBtn = $("#eqWriteSendBtn");
+    if (sendBtn) sendBtn.disabled = !can;
+    var autoBtn = $("#eqAutoBtn");
+    if (autoBtn) {
+      var running = !!eq.auto;
+      autoBtn.textContent = running ? "탐색 중지" : "자동 신호 찾기";
+      autoBtn.classList.toggle("is-on", running);
+      autoBtn.disabled = !can && !running;
+    }
+    eqRenderWriteTargets();
+  }
+
+  function eqOpenLogBody() {
+    var body = $("#eqLogBody");
+    var toggle = $("#eqLogToggle");
+    if (!body || body.classList.contains("is-open")) return;
+    body.classList.add("is-open");
+    if (toggle) toggle.setAttribute("aria-expanded", "true");
+    eqRenderLog();
+  }
+
+  // ---------- 자동 시작 신호 탐색 ----------
+  function eqAutoStart() {
+    if (eq.auto) {
+      eqAutoStop("사용자가 멈췄습니다");
+      return;
+    }
+    if (!eqIsConnected()) {
+      toast("먼저 압력계에 연결해 주세요");
+      return;
+    }
+    if (!eqPickWriter()) {
+      toast("쓰기 가능한 특성을 찾지 못했어요");
+      return;
+    }
+    eq.auto = { i: 0, lastLabel: "", lastPackets: eq.packets, timer: null };
+    eqLogLine("AUTO", "탐색", "프리셋 " + EQ_WRITE_PRESETS.length + "개를 " + EQ_AUTO_INTERVAL + "ms 간격으로 보냅니다");
+    eqSyncWriteUI();
+    eqAutoStep();
+  }
+
+  function eqAutoStep() {
+    var a = eq.auto;
+    if (!a) return;
+    if (!eqIsConnected()) {
+      eqAutoStop("연결이 끊겼습니다");
+      return;
+    }
+    if (a.i >= EQ_WRITE_PRESETS.length) {
+      eqAutoStop("반응한 신호가 없습니다");
+      return;
+    }
+    var pr = EQ_WRITE_PRESETS[a.i++];
+    a.lastLabel = pr.label;
+    a.lastPackets = eq.packets;
+    eqSendBytes(eqPresetBytes(pr), pr.label);
+    a.timer = setTimeout(eqAutoStep, EQ_AUTO_INTERVAL);
+  }
+
+  function eqAutoReact() {
+    var a = eq.auto;
+    if (!a) return;
+    var label = a.lastLabel || "?";
+    eqLogLine("AUTO", "반응", "「" + label + "」 신호에 데이터가 들어왔습니다 · 탐색을 멈춥니다");
+    toast("반응한 신호 · " + label);
+    eqAutoStop(null);
+  }
+
+  function eqAutoStop(reason) {
+    var a = eq.auto;
+    if (!a) return;
+    if (a.timer) clearTimeout(a.timer);
+    eq.auto = null;
+    if (reason) {
+      eqLogLine("AUTO", "정지", reason);
+      toast("자동 신호 탐색 · " + reason);
+    }
+    eqSyncWriteUI();
+  }
+
   // ---------- 연결 ----------
   function eqCheckSupport() {
     var ok = !!(navigator.bluetooth && typeof navigator.bluetooth.requestDevice === "function");
@@ -3324,13 +3606,14 @@
     var nameEl = $("#eqDeviceName");
     if (nameEl) nameEl.textContent = device.name || "압력계";
     var subEl = $("#eqDeviceSub");
-    if (subEl) subEl.textContent = "연결됨 · 구독 특성 " + eq.chars.filter(function (c) { return c.subscribed; }).length + "개";
+    if (subEl) subEl.textContent = "연결됨 · 특성 확인 중…";
     var btn = $("#eqConnectBtn");
     if (btn) btn.disabled = true;
     var label = $("#eqConnectLabel");
     if (label) label.textContent = "연결됨";
     var dis = $("#eqDisconnectBtn");
     if (dis) dis.hidden = false;
+    eqSyncWriteUI();
   }
 
   function eqResetConnectionUI() {
@@ -3344,10 +3627,12 @@
     if (label) label.textContent = eq.supported === false ? "블루투스 미지원" : "기기 연결";
     var dis = $("#eqDisconnectBtn");
     if (dis) dis.hidden = true;
+    eqSyncWriteUI();
   }
 
   function eqOnGattDisconnected() {
     if (eq.manualClose) { eq.manualClose = false; return; }
+    if (eq.auto) eqAutoStop("연결이 끊겼습니다");
     eqLogLine("SYS", "해제", "기기와의 연결이 끊어졌습니다");
     eqResetConnectionUI();
     toast("압력계 연결이 끊어졌어요");
@@ -3364,6 +3649,17 @@
     var entry = { uuid: ch.uuid, flags: flags.join(" "), subscribed: false };
     eq.chars.push(entry);
     eqLogLine("CHR", "특성", eqShortUuid(ch.uuid) + (flags.length ? " [" + flags.join(" ") + "]" : ""));
+
+    // 쓰기 가능한 특성(fff2 등)은 시작 신호를 보내는 데 쓰므로 따로 보관합니다.
+    if (p.write || p.writeWithoutResponse) {
+      eq.writers.push({
+        uuid: ch.uuid,
+        ch: ch,
+        write: !!p.write,
+        writeNR: !!p.writeWithoutResponse,
+        flags: entry.flags
+      });
+    }
 
     if (p.notify || p.indicate) {
       try {
@@ -3421,11 +3717,16 @@
     // notify 특성이 없는 기기라면 마지막 읽기 값을 대신 보여줍니다.
     if (!eq.hasNotify && eq.lastRead) eqApplyPacket(eq.lastRead);
     var sub = eq.chars.filter(function (c) { return c.subscribed; }).length;
-    eqLogLine("SYS", "정리", "구독 " + sub + "개 · 읽기 " + eq.chars.filter(function (c) { return c.flags.indexOf("read") >= 0; }).length + "개");
+    var reads = eq.chars.filter(function (c) { return c.flags.indexOf("read") >= 0; }).length;
+    var writes = eq.writers.length;
+    eqLogLine("SYS", "정리", "구독 " + sub + "개 · 읽기 " + reads + "개 · 쓰기 " + writes + "개" +
+      (writes ? " (" + eq.writers.map(function (w) { return eqShortUuid(w.uuid); }).join(", ") + ")" : ""));
     if (services.length && !sub) eqLogLine("SYS", "안내", "알림(notify) 특성이 없어 읽기 값만 표시됩니다");
+    if (writes) eqLogLine("SYS", "안내", "쓰기 특성으로 시작 신호를 보낼 수 있습니다 · 아래 「명령 보내기」");
     var row = $("#eqDeviceSub");
     var dev = eq.device;
-    if (row && dev) row.textContent = "연결됨 · 구독 특성 " + sub + "개";
+    if (row && dev) row.textContent = "연결됨 · 구독 " + sub + " · 쓰기 " + writes;
+    eqSyncWriteUI();
   }
 
   function eqHandleConnectError(err) {
@@ -3468,6 +3769,8 @@
       });
       eq.device = device;
       eq.chars = [];
+      eq.writers = [];
+      eq.writeTarget = "";
       eq.hasNotify = false;
       eq.lastRead = null;
       device.addEventListener("gattserverdisconnected", eqOnGattDisconnected);
@@ -3477,6 +3780,8 @@
       eqSetConnected(device);
       eqLogLine("SYS", "연결", (device.name || "이름 없음") + " · " + (device.id || ""));
       await eqScanServices(server);
+      eqSyncWriteUI();
+      eqOpenLogBody();
       toast("압력계에 연결했어요");
     } catch (err) {
       eqHandleConnectError(err);
@@ -3489,6 +3794,7 @@
 
   function eqDisconnect(manual) {
     eqStopDemo();
+    eqAutoStop("연결을 해제했습니다");
     eq.manualClose = !!manual;
     try {
       if (eq.device && eq.device.gatt && eq.device.gatt.connected) eq.device.gatt.disconnect();
@@ -3637,6 +3943,32 @@
     });
     var demoBtn = $("#eqDemoBtn");
     if (demoBtn) demoBtn.addEventListener("click", eqToggleDemo);
+
+    // 명령 보내기 (Write)
+    eqRenderWritePresets();
+    var presetWrap = $("#eqWritePresets");
+    if (presetWrap) presetWrap.addEventListener("click", function (ev) {
+      var btn = ev.target.closest("[data-preset]");
+      if (!btn) return;
+      eqSendPreset(Number(btn.getAttribute("data-preset")));
+    });
+    var writeSendBtn = $("#eqWriteSendBtn");
+    if (writeSendBtn) writeSendBtn.addEventListener("click", eqSendCustom);
+    var writeInput = $("#eqWriteInput");
+    if (writeInput) writeInput.addEventListener("keydown", function (ev) {
+      if (ev.key === "Enter") {
+        ev.preventDefault();
+        eqSendCustom();
+      }
+    });
+    var writeTargetSel = $("#eqWriteTargetSel");
+    if (writeTargetSel) writeTargetSel.addEventListener("change", function () {
+      eq.writeTarget = writeTargetSel.value || "";
+      eqSyncWriteUI();
+    });
+    var autoBtn = $("#eqAutoBtn");
+    if (autoBtn) autoBtn.addEventListener("click", eqAutoStart);
+    eqSyncWriteUI();
     var copyLinkBtn = $("#eqCopyLinkBtn");
     if (copyLinkBtn) copyLinkBtn.addEventListener("click", function () {
       eqCopyText(window.location.href, "페이지 주소를 복사했어요");
