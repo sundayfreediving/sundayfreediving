@@ -3204,7 +3204,7 @@
   // ---------- 로그 ----------
   function eqLogLine(tag, what, detail, hex, ascii, vals) {
     eq.lines.push({ t: Date.now(), tag: tag, what: what, detail: detail, hex: hex, ascii: ascii, vals: vals });
-    if (eq.lines.length > 200) eq.lines.splice(0, eq.lines.length - 200);
+    if (eq.lines.length > 150) eq.lines.splice(0, eq.lines.length - 150);
     if (eq.logTimer) return;
     eq.logTimer = setTimeout(function () {
       eq.logTimer = null;
@@ -3215,6 +3215,11 @@
   function eqRenderLog() {
     var list = $("#eqLogList");
     if (!list) return;
+    var meta = $("#eqLogMeta");
+    if (meta) meta.textContent = String(eq.packets);
+    // 로그를 접어 둔 동안에는 화면을 그리지 않습니다 (배터리·발열).
+    var body = $("#eqLogBody");
+    if (body && !body.classList.contains("is-open")) return;
     var frag = document.createDocumentFragment();
     eq.lines.slice().reverse().forEach(function (l) {
       var row = document.createElement("div");
@@ -3257,8 +3262,6 @@
     });
     list.textContent = "";
     list.appendChild(frag);
-    var meta = $("#eqLogMeta");
-    if (meta) meta.textContent = String(eq.packets);
     var empty = $("#eqLogEmpty");
     if (empty) empty.hidden = eq.lines.length > 0;
   }
@@ -3596,6 +3599,7 @@
       var on = !body.classList.contains("is-open");
       body.classList.toggle("is-open", on);
       logToggle.setAttribute("aria-expanded", on ? "true" : "false");
+      if (on) eqRenderLog();
     });
 
     var parseSel = $("#eqParseSel");
