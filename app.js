@@ -3627,6 +3627,8 @@
     if (label) label.textContent = eq.supported === false ? "블루투스 미지원" : "기기 연결";
     var dis = $("#eqDisconnectBtn");
     if (dis) dis.hidden = true;
+    eq.writers = [];
+    eq.writeTarget = "";
     eqSyncWriteUI();
   }
 
