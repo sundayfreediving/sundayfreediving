@@ -2889,6 +2889,750 @@
     });
   }
 
+  // =========================================================
+  //  압력 확인 · EZEQ 블루투스 압력계
+  // =========================================================
+  var EQ_STORE = "sfd.eq";
+  var EQ_UNITS = ["mbar", "kPa", "cmH₂O", "m"];
+
+  // EZEQ는 GATT UUID가 공개되어 있지 않아, 압력계·BLE 모듈에서 흔히 쓰는
+  // 서비스 UUID를 폭넓게 등록합니다. (Generic Access/Attribute 0x1800·0x1801은
+  // 브라우저가 차단 목록으로 막아 요청 자체가 거부되므로 넣지 않습니다.)
+  var EQ_SERVICE_UUIDS = (function () {
+    var list = [
+      // Nordic UART
+      "6e400001-b5a3-f393-e0a9-e50e24dcca9e",
+      "6e400002-b5a3-f393-e0a9-e50e24dcca9e",
+      "6e400003-b5a3-f393-e0a9-e50e24dcca9e",
+      // HM-10 / TI CC254x
+      "0000ffe0-0000-1000-8000-00805f9b34fb",
+      "0000ffe1-0000-1000-8000-00805f9b34fb",
+      "0000ffe4-0000-1000-8000-00805f9b34fb",
+      "0000ffe5-0000-1000-8000-00805f9b34fb",
+      "0000ffe9-0000-1000-8000-00805f9b34fb",
+      // Microchip / ISSC
+      "49535343-fe7d-4ae5-8fa9-9fafd205e455",
+      "49535343-8841-43f4-a8d4-ecbe34729bb3",
+      "49535343-1e4d-4bd9-ba61-23c647249616",
+      // 표준 서비스 (기기 정보 · 배터리 · 환경 센서 · 체중계)
+      "0000180a-0000-1000-8000-00805f9b34fb",
+      "0000180f-0000-1000-8000-00805f9b34fb",
+      "0000181a-0000-1000-8000-00805f9b34fb",
+      "0000181c-0000-1000-8000-00805f9b34fb",
+      "0000181d-0000-1000-8000-00805f9b34fb",
+      // 커스텀 벤더 대역 (압력계·저울·UART 모듈에서 흔한 대역)
+      "0000fff0-0000-1000-8000-00805f9b34fb",
+      "0000fff1-0000-1000-8000-00805f9b34fb",
+      "0000fff2-0000-1000-8000-00805f9b34fb",
+      "0000fff3-0000-1000-8000-00805f9b34fb",
+      "0000fff4-0000-1000-8000-00805f9b34fb",
+      "0000fff5-0000-1000-8000-00805f9b34fb",
+      "0000fff6-0000-1000-8000-00805f9b34fb",
+      "0000fff7-0000-1000-8000-00805f9b34fb",
+      "0000fff8-0000-1000-8000-00805f9b34fb",
+      "0000fff9-0000-1000-8000-00805f9b34fb",
+      "0000ffa0-0000-1000-8000-00805f9b34fb",
+      "0000ffa1-0000-1000-8000-00805f9b34fb",
+      "0000ffb0-0000-1000-8000-00805f9b34fb",
+      "0000ffb1-0000-1000-8000-00805f9b34fb",
+      "0000ff00-0000-1000-8000-00805f9b34fb",
+      "0000ff01-0000-1000-8000-00805f9b34fb",
+      "0000ff02-0000-1000-8000-00805f9b34fb",
+      "0000ff10-0000-1000-8000-00805f9b34fb",
+      "0000ff11-0000-1000-8000-00805f9b34fb",
+      "0000fee0-0000-1000-8000-00805f9b34fb",
+      "0000fee1-0000-1000-8000-00805f9b34fb",
+      "0000fee9-0000-1000-8000-00805f9b34fb",
+      "0000fea0-0000-1000-8000-00805f9b34fb",
+      "0000fea1-0000-1000-8000-00805f9b34fb",
+      "0000ab00-0000-1000-8000-00805f9b34fb"
+    ];
+    return list.filter(function (u, i) { return list.indexOf(u) === i; });
+  })();
+
+  // 보안 오류가 났을 때 쓰는 최소 목록
+  var EQ_MINIMAL_UUIDS = [
+    "6e400001-b5a3-f393-e0a9-e50e24dcca9e",
+    "6e400002-b5a3-f393-e0a9-e50e24dcca9e",
+    "6e400003-b5a3-f393-e0a9-e50e24dcca9e",
+    "0000ffe0-0000-1000-8000-00805f9b34fb",
+    "0000ffe1-0000-1000-8000-00805f9b34fb",
+    "0000ffe4-0000-1000-8000-00805f9b34fb",
+    "0000ffe5-0000-1000-8000-00805f9b34fb",
+    "0000ffe9-0000-1000-8000-00805f9b34fb",
+    "49535343-fe7d-4ae5-8fa9-9fafd205e455",
+    "49535343-8841-43f4-a8d4-ecbe34729bb3",
+    "49535343-1e4d-4bd9-ba61-23c647249616",
+    "0000181a-0000-1000-8000-00805f9b34fb",
+    "0000fff0-0000-1000-8000-00805f9b34fb",
+    "0000fff1-0000-1000-8000-00805f9b34fb",
+    "0000fff2-0000-1000-8000-00805f9b34fb",
+    "0000ffb0-0000-1000-8000-00805f9b34fb",
+    "0000ffb1-0000-1000-8000-00805f9b34fb",
+    "0000ff00-0000-1000-8000-00805f9b34fb",
+    "0000ff01-0000-1000-8000-00805f9b34fb"
+  ];
+
+  var eq = {
+    open: false,
+    supported: null,
+    device: null,
+    server: null,
+    chars: [],
+    hasNotify: false,
+    packets: 0,
+    lastAt: 0,
+    lastCands: null,
+    lastRead: null,
+    lines: [],
+    logTimer: null,
+    unit: "mbar",
+    parseMode: "auto",
+    scale: 1,
+    peakMbar: 0,
+    currentMbar: 0,
+    historyPushed: false,
+    useMinimal: false,
+    manualClose: false,
+    demoTimer: null,
+    demoPhase: 0
+  };
+
+  function eqLoadPrefs() {
+    var saved = lsGet(EQ_STORE, null);
+    if (!saved || typeof saved !== "object") return;
+    if (EQ_UNITS.indexOf(saved.unit) >= 0) eq.unit = saved.unit;
+    if (saved.parseMode) eq.parseMode = saved.parseMode;
+    var sc = Number(saved.scale);
+    if (sc > 0) eq.scale = sc;
+  }
+
+  function eqSavePrefs() {
+    lsSet(EQ_STORE, { unit: eq.unit, parseMode: eq.parseMode, scale: eq.scale });
+  }
+
+  function eqClock(ms) {
+    var d = new Date(ms || Date.now());
+    return pad2(d.getHours()) + ":" + pad2(d.getMinutes()) + ":" + pad2(d.getSeconds()) + "." + ("00" + d.getMilliseconds()).slice(-3);
+  }
+
+  function eqShortUuid(uuid) {
+    var u = String(uuid || "").toLowerCase();
+    var m = u.match(/^0000([0-9a-f]{4})-0000-1000-8000-00805f9b34fb$/);
+    if (m) return "0x" + m[1];
+    return u.length > 13 ? u.slice(0, 8) + "…" : u;
+  }
+
+  function eqToUnit(mbar, unit) {
+    switch (unit) {
+      case "kPa": return mbar / 10;
+      case "cmH₂O": return mbar * 1.019716;
+      case "m": return mbar / 100;
+      default: return mbar;
+    }
+  }
+
+  function eqFmt(v) {
+    if (!isFinite(v)) return "—";
+    if (Math.abs(v) >= 1000) return String(Math.round(v));
+    return v.toFixed(1);
+  }
+
+  function eqNum(v) {
+    if (!isFinite(v)) return "—";
+    return String(Math.round(v * 1000) / 1000);
+  }
+
+  function eqBytes(dv) {
+    try { return new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength); }
+    catch (e) { return new Uint8Array(0); }
+  }
+
+  function eqHex(bytes) {
+    var cap = Math.min(bytes.length, 64);
+    var out = [];
+    for (var i = 0; i < cap; i++) out.push(("0" + bytes[i].toString(16)).slice(-2).toUpperCase());
+    return out.join(" ") + (bytes.length > cap ? " …(" + bytes.length + "B)" : "");
+  }
+
+  function eqAscii(bytes) {
+    var cap = Math.min(bytes.length, 64);
+    var s = "";
+    for (var i = 0; i < cap; i++) {
+      var b = bytes[i];
+      s += (b >= 32 && b <= 126) ? String.fromCharCode(b) : "·";
+    }
+    return s;
+  }
+
+  // 한 패킷을 여러 규격으로 동시에 해석합니다.
+  function eqCandidates(bytes, dv) {
+    var out = [];
+    var ascii = eqAscii(bytes);
+    var m = ascii.match(/-?\d+(?:\.\d+)?/);
+    if (m) out.push({ key: "ascii", label: "ASCII", value: parseFloat(m[0]) });
+    if (bytes.length >= 1) {
+      out.push({ key: "u8", label: "uint8", value: bytes[0] });
+      out.push({ key: "i8", label: "int8", value: dv.getInt8(0) });
+    }
+    if (bytes.length >= 2) {
+      out.push({ key: "u16le", label: "uint16 LE", value: dv.getUint16(0, true) });
+      out.push({ key: "u16be", label: "uint16 BE", value: dv.getUint16(0, false) });
+      out.push({ key: "i16le", label: "int16 LE", value: dv.getInt16(0, true) });
+      out.push({ key: "i16be", label: "int16 BE", value: dv.getInt16(0, false) });
+    }
+    if (bytes.length >= 4) {
+      out.push({ key: "u32le", label: "uint32 LE", value: dv.getUint32(0, true) });
+      out.push({ key: "u32be", label: "uint32 BE", value: dv.getUint32(0, false) });
+      out.push({ key: "f32le", label: "float32 LE", value: dv.getFloat32(0, true) });
+      out.push({ key: "f32be", label: "float32 BE", value: dv.getFloat32(0, false) });
+    }
+    return out;
+  }
+
+  function eqPickValue(cands, mode) {
+    if (!cands || !cands.length) return null;
+    if (mode && mode !== "auto") {
+      for (var i = 0; i < cands.length; i++) if (cands[i].key === mode) return cands[i];
+      return null;
+    }
+    // 1) ASCII 숫자 ("123\r\n" 같은 UART 형식)
+    for (var a = 0; a < cands.length; a++) {
+      if (cands[a].key === "ascii" && isFinite(cands[a].value) && Math.abs(cands[a].value) < 100000) return cands[a];
+    }
+    // 2) 2바이트 정수 중 0~20000에서 가장 작은 값 (압력계의 흔한 형식)
+    var pool = [];
+    for (var b = 0; b < cands.length; b++) {
+      var c = cands[b];
+      if ((c.key === "u16le" || c.key === "u16be" || c.key === "i16le" || c.key === "i16be") &&
+          c.value >= 0 && c.value <= 20000) pool.push(c);
+    }
+    if (pool.length) {
+      pool.sort(function (x, y) { return x.value - y.value || (x.key === "u16le" ? -1 : 1); });
+      return pool[0];
+    }
+    // 3) 4바이트 실수
+    for (var f = 0; f < cands.length; f++) {
+      if ((cands[f].key === "f32le" || cands[f].key === "f32be") && isFinite(cands[f].value) && Math.abs(cands[f].value) < 100000) return cands[f];
+    }
+    return cands[0] || null;
+  }
+
+  function eqCandSummary(cands) {
+    var parts = [];
+    ["ascii", "u16le", "u16be", "f32le"].forEach(function (k) {
+      for (var i = 0; i < cands.length; i++) {
+        if (cands[i].key === k) { parts.push(cands[i].label + " " + eqNum(cands[i].value)); return; }
+      }
+    });
+    return parts.join(" · ");
+  }
+
+  function eqRenderValue(live) {
+    var el = $("#eqValue");
+    if (el) {
+      el.textContent = eqFmt(eqToUnit(eq.currentMbar, eq.unit));
+      el.classList.toggle("is-live", !!live && eq.currentMbar > 0);
+    }
+    var peak = $("#eqPeak");
+    if (peak) peak.textContent = eqFmt(eqToUnit(eq.peakMbar, eq.unit));
+    var bar = $("#eqBarFill");
+    if (bar) {
+      var ref = Math.max(eq.peakMbar * 1.15, 1);
+      var pct = Math.max(0, Math.min(100, (eq.currentMbar / ref) * 100));
+      bar.style.width = pct.toFixed(1) + "%";
+    }
+    var unitBtn = $("#eqUnitBtn");
+    if (unitBtn) unitBtn.textContent = eq.unit;
+    eqUpdatePacketMeta();
+  }
+
+  function eqUpdatePacketMeta() {
+    var el = $("#eqPacketMeta");
+    if (!el) return;
+    if (!eq.packets) { el.textContent = "대기 중"; return; }
+    el.textContent = "#" + eq.packets + " · " + eqClock(eq.lastAt).slice(0, 8);
+  }
+
+  function eqApplyPacket(cands) {
+    var pick = eqPickValue(cands, eq.parseMode);
+    if (!pick || !isFinite(pick.value)) return;
+    var mbar = pick.value * eq.scale;
+    eq.currentMbar = mbar;
+    if (mbar > eq.peakMbar) eq.peakMbar = mbar;
+    eqRenderValue(true);
+  }
+
+  function eqHandleValue(uuid, dv, kind) {
+    var bytes = eqBytes(dv);
+    if (!bytes.length) return;
+    eq.packets++;
+    eq.lastAt = Date.now();
+    var cands = eqCandidates(bytes, dv);
+    eq.lastCands = cands;
+    var pick = eqPickValue(cands, eq.parseMode);
+    var summary = eqCandSummary(cands);
+    if (pick) summary = "선택 " + pick.label + " " + eqNum(pick.value) + (summary ? " · " + summary : "");
+    eqLogLine(kind === "READ" ? "READ" : "DATA", kind === "READ" ? "읽기" : "수신",
+      eqShortUuid(uuid), eqHex(bytes), eqAscii(bytes), summary);
+
+    if (kind === "READ") {
+      eq.lastRead = cands;
+      return;
+    }
+    eq.hasNotify = true;
+    eqApplyPacket(cands);
+  }
+
+  function eqReparseLast() {
+    if (!eq.lastCands) return;
+    eqApplyPacket(eq.lastCands);
+  }
+
+  // ---------- 로그 ----------
+  function eqLogLine(tag, what, detail, hex, ascii, vals) {
+    eq.lines.push({ t: Date.now(), tag: tag, what: what, detail: detail, hex: hex, ascii: ascii, vals: vals });
+    if (eq.lines.length > 200) eq.lines.splice(0, eq.lines.length - 200);
+    if (eq.logTimer) return;
+    eq.logTimer = setTimeout(function () {
+      eq.logTimer = null;
+      eqRenderLog();
+    }, 180);
+  }
+
+  function eqRenderLog() {
+    var list = $("#eqLogList");
+    if (!list) return;
+    var frag = document.createDocumentFragment();
+    eq.lines.slice().reverse().forEach(function (l) {
+      var row = document.createElement("div");
+      row.className = "eq-log-line";
+      var head = document.createElement("div");
+      var t = document.createElement("span");
+      t.className = "eq-t";
+      t.textContent = eqClock(l.t).slice(0, 8);
+      var tag = document.createElement("span");
+      tag.className = "eq-tag";
+      tag.textContent = l.tag;
+      head.appendChild(t);
+      head.appendChild(tag);
+      if (l.detail) {
+        var id = document.createElement("span");
+        id.className = "eq-id";
+        id.textContent = l.detail;
+        head.appendChild(id);
+      }
+      row.appendChild(head);
+      if (l.hex) {
+        var h = document.createElement("span");
+        h.className = "eq-hex";
+        h.textContent = l.hex;
+        row.appendChild(h);
+      }
+      if (l.ascii) {
+        var a = document.createElement("span");
+        a.className = "eq-asc";
+        a.textContent = l.ascii;
+        row.appendChild(a);
+      }
+      if (l.vals) {
+        var v = document.createElement("span");
+        v.className = "eq-vals";
+        v.textContent = l.vals;
+        row.appendChild(v);
+      }
+      frag.appendChild(row);
+    });
+    list.textContent = "";
+    list.appendChild(frag);
+    var meta = $("#eqLogMeta");
+    if (meta) meta.textContent = String(eq.packets);
+    var empty = $("#eqLogEmpty");
+    if (empty) empty.hidden = eq.lines.length > 0;
+  }
+
+  function eqCopyText(text, okMsg) {
+    var done = function () { toast(okMsg); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, function () { eqFallbackCopy(text, done); });
+    } else {
+      eqFallbackCopy(text, done);
+    }
+  }
+
+  function eqFallbackCopy(text, done) {
+    try {
+      var ta = document.createElement("textarea");
+      ta.value = text;
+      ta.setAttribute("readonly", "");
+      ta.style.position = "fixed";
+      ta.style.top = "-1000px";
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+      done();
+    } catch (e) { toast("복사하지 못했어요"); }
+  }
+
+  function eqCopyLog() {
+    if (!eq.lines.length) { toast("복사할 로그가 없어요"); return; }
+    var text = eq.lines.map(function (l) {
+      var s = eqClock(l.t) + " " + l.tag + " " + l.what;
+      if (l.detail) s += " " + l.detail;
+      if (l.hex) s += "\n  HEX " + l.hex;
+      if (l.ascii) s += "\n  ASC " + l.ascii;
+      if (l.vals) s += "\n  VAL " + l.vals;
+      return s;
+    }).join("\n");
+    eqCopyText(text, "로그 " + eq.lines.length + "줄을 복사했어요");
+  }
+
+  // ---------- 연결 ----------
+  function eqCheckSupport() {
+    var ok = !!(navigator.bluetooth && typeof navigator.bluetooth.requestDevice === "function");
+    eq.supported = ok;
+    var warn = $("#eqUnsupported");
+    if (warn) warn.hidden = ok;
+    var btn = $("#eqConnectBtn");
+    if (btn) btn.disabled = !ok;
+    var label = $("#eqConnectLabel");
+    if (label && !ok) label.textContent = "블루투스 미지원";
+    return ok;
+  }
+
+  function eqSetConnected(device) {
+    var chip = $("#eqConnChip");
+    if (chip) { chip.textContent = "연결됨"; chip.classList.add("is-on"); }
+    var row = $("#eqDevice");
+    if (row) { row.hidden = false; row.classList.add("is-on"); }
+    var nameEl = $("#eqDeviceName");
+    if (nameEl) nameEl.textContent = device.name || "압력계";
+    var subEl = $("#eqDeviceSub");
+    if (subEl) subEl.textContent = "연결됨 · 구독 특성 " + eq.chars.filter(function (c) { return c.subscribed; }).length + "개";
+    var btn = $("#eqConnectBtn");
+    if (btn) btn.disabled = true;
+    var label = $("#eqConnectLabel");
+    if (label) label.textContent = "연결됨";
+    var dis = $("#eqDisconnectBtn");
+    if (dis) dis.hidden = false;
+  }
+
+  function eqResetConnectionUI() {
+    var chip = $("#eqConnChip");
+    if (chip) { chip.textContent = "연결 안 됨"; chip.classList.remove("is-on"); }
+    var row = $("#eqDevice");
+    if (row) { row.hidden = true; row.classList.remove("is-on"); }
+    var btn = $("#eqConnectBtn");
+    if (btn) btn.disabled = eq.supported === false;
+    var label = $("#eqConnectLabel");
+    if (label) label.textContent = eq.supported === false ? "블루투스 미지원" : "기기 연결";
+    var dis = $("#eqDisconnectBtn");
+    if (dis) dis.hidden = true;
+  }
+
+  function eqOnGattDisconnected() {
+    if (eq.manualClose) { eq.manualClose = false; return; }
+    eqLogLine("SYS", "해제", "기기와의 연결이 끊어졌습니다");
+    eqResetConnectionUI();
+    toast("압력계 연결이 끊어졌어요");
+  }
+
+  async function eqAttachChar(ch) {
+    var p = ch.properties || {};
+    var flags = [];
+    if (p.read) flags.push("read");
+    if (p.write) flags.push("write");
+    if (p.writeWithoutResponse) flags.push("writeNR");
+    if (p.notify) flags.push("notify");
+    if (p.indicate) flags.push("indicate");
+    var entry = { uuid: ch.uuid, flags: flags.join(" "), subscribed: false };
+    eq.chars.push(entry);
+    eqLogLine("CHR", "특성", eqShortUuid(ch.uuid) + (flags.length ? " [" + flags.join(" ") + "]" : ""));
+
+    if (p.notify || p.indicate) {
+      try {
+        ch.addEventListener("characteristicvaluechanged", eqOnNotify);
+        await ch.startNotifications();
+        entry.subscribed = true;
+        eq.hasNotify = true;
+        eqLogLine("OK", "구독", eqShortUuid(ch.uuid));
+      } catch (err) {
+        eqLogLine("ERR", "구독 실패", eqShortUuid(ch.uuid) + " · " + (err && err.message || err));
+      }
+    }
+
+    if (p.read) {
+      try {
+        var v = await ch.readValue();
+        eqHandleValue(ch.uuid, v, "READ");
+      } catch (err) {
+        eqLogLine("ERR", "읽기 실패", eqShortUuid(ch.uuid) + " · " + (err && err.message || err));
+      }
+    }
+  }
+
+  function eqOnNotify(event) {
+    var ch = event.target;
+    eqHandleValue(ch.uuid, ch.value, "NOTIFY");
+  }
+
+  async function eqScanServices(server) {
+    var services = [];
+    try {
+      services = await server.getPrimaryServices();
+    } catch (err) {
+      eqLogLine("ERR", "서비스", "조회 실패 · " + (err && err.message || err));
+      return;
+    }
+    eqLogLine("SYS", "서비스", "총 " + services.length + "개 발견");
+    for (var i = 0; i < services.length; i++) {
+      var svc = services[i];
+      eqLogLine("SVC", "서비스", eqShortUuid(svc.uuid));
+      var chars = [];
+      try {
+        chars = await svc.getCharacteristics();
+      } catch (err) {
+        eqLogLine("ERR", "특성", eqShortUuid(svc.uuid) + " · " + (err && err.message || err));
+        continue;
+      }
+      for (var j = 0; j < chars.length; j++) {
+        await eqAttachChar(chars[j]);
+      }
+    }
+    // notify 특성이 없는 기기라면 마지막 읽기 값을 대신 보여줍니다.
+    if (!eq.hasNotify && eq.lastRead) eqApplyPacket(eq.lastRead);
+    var sub = eq.chars.filter(function (c) { return c.subscribed; }).length;
+    eqLogLine("SYS", "정리", "구독 " + sub + "개 · 읽기 " + eq.chars.filter(function (c) { return c.flags.indexOf("read") >= 0; }).length + "개");
+    if (!sub) eqLogLine("SYS", "안내", "알림(notify) 특성이 없어 읽기 값만 표시됩니다");
+    var row = $("#eqDeviceSub");
+    var dev = eq.device;
+    if (row && dev) row.textContent = "연결됨 · 구독 특성 " + sub + "개";
+  }
+
+  function eqHandleConnectError(err) {
+    var name = err && err.name || "";
+    var msg = err && err.message || String(err);
+    eqLogLine("ERR", "연결 실패", name + " · " + msg);
+    if (name === "NotFoundError") {
+      toast("기기를 선택하지 않았어요. 다시 시도해 주세요.");
+    } else if (name === "SecurityError") {
+      eq.useMinimal = true;
+      toast("허용되지 않는 서비스가 섞여 있었어요. 연결을 한 번 더 눌러 주세요.");
+    } else if (name === "NetworkError") {
+      toast("기기 연결에 실패했어요. 전원과 거리를 확인해 주세요.");
+    } else if (name === "NotSupportedError") {
+      toast("이 브라우저는 웹 블루투스를 지원하지 않아요. Bluefy로 열어 주세요.");
+    } else {
+      toast("연결하지 못했어요: " + msg);
+    }
+  }
+
+  async function eqConnect() {
+    if (!eqCheckSupport()) {
+      toast("이 브라우저에서는 블루투스를 쓸 수 없어요");
+      return;
+    }
+    if (eq.device && eq.device.gatt && eq.device.gatt.connected) {
+      toast("이미 연결되어 있어요");
+      return;
+    }
+    var btn = $("#eqConnectBtn");
+    var label = $("#eqConnectLabel");
+    if (btn) btn.disabled = true;
+    if (label) label.textContent = "기기 찾는 중…";
+    eqLogLine("SYS", "검색", "기기 선택 창을 엽니다");
+
+    try {
+      var device = await navigator.bluetooth.requestDevice({
+        acceptAllDevices: true,
+        optionalServices: eq.useMinimal ? EQ_MINIMAL_UUIDS : EQ_SERVICE_UUIDS
+      });
+      eq.device = device;
+      eq.chars = [];
+      eq.hasNotify = false;
+      eq.lastRead = null;
+      device.addEventListener("gattserverdisconnected", eqOnGattDisconnected);
+      if (label) label.textContent = "연결 중…";
+      var server = await device.gatt.connect();
+      eq.server = server;
+      eqSetConnected(device);
+      eqLogLine("SYS", "연결", (device.name || "이름 없음") + " · " + (device.id || ""));
+      await eqScanServices(server);
+      toast("압력계에 연결했어요");
+    } catch (err) {
+      eqHandleConnectError(err);
+    } finally {
+      var live = !!(eq.device && eq.device.gatt && eq.device.gatt.connected);
+      if (btn) btn.disabled = live || eq.supported === false;
+      if (label) label.textContent = live ? "연결됨" : "기기 연결";
+    }
+  }
+
+  function eqDisconnect(manual) {
+    eqStopDemo();
+    eq.manualClose = !!manual;
+    try {
+      if (eq.device && eq.device.gatt && eq.device.gatt.connected) eq.device.gatt.disconnect();
+    } catch (err) { /* ignore */ }
+    eqResetConnectionUI();
+    if (manual) {
+      toast("압력계 연결을 해제했어요");
+      eqLogLine("SYS", "해제", "사용자가 연결을 해제했습니다");
+    }
+  }
+
+  // ---------- 모의 값 (기기 없이 화면 확인) ----------
+  function eqToggleDemo() {
+    if (eq.demoTimer) {
+      eqStopDemo();
+      toast("모의 값 테스트를 멈췄어요");
+      return;
+    }
+    eq.demoPhase = 0;
+    eqLogLine("SYS", "테스트", "모의 압력을 재생합니다 (화면 확인용)");
+    eq.demoTimer = setInterval(function () {
+      eq.demoPhase += 0.07;
+      var mbar = Math.max(0, Math.sin(eq.demoPhase)) * 60;
+      var raw = Math.round(mbar / (eq.scale || 1));
+      var buf = new ArrayBuffer(2);
+      new DataView(buf).setUint16(0, raw, true);
+      eqHandleValue("demo-0000-0000-0000-000000000000", new DataView(buf), "NOTIFY");
+    }, 140);
+    toast("모의 압력 값을 재생합니다");
+  }
+
+  function eqStopDemo() {
+    if (eq.demoTimer) {
+      clearInterval(eq.demoTimer);
+      eq.demoTimer = null;
+    }
+  }
+
+  // ---------- 페이지 열기 / 닫기 (좌우 슬라이드) ----------
+  function openEqPage() {
+    var screen = $("#eqScreen");
+    if (!screen || eq.open) return;
+    eq.open = true;
+    eqCheckSupport();
+    eqRenderValue(false);
+    screen.hidden = false;
+    void screen.offsetWidth; // 시작 위치를 확정해 전환이 끊기지 않게
+    screen.classList.add("is-open");
+    document.body.classList.add("is-locked");
+    if (!eq.historyPushed) {
+      try { history.pushState({ sfdEq: 1 }, ""); eq.historyPushed = true; } catch (e) { /* ignore */ }
+    }
+  }
+
+  function closeEqPage(fromPop) {
+    var screen = $("#eqScreen");
+    if (!screen || !eq.open) return;
+    eq.open = false;
+    screen.classList.remove("is-open");
+    document.body.classList.remove("is-locked");
+    eqStopDemo();
+    var page = screen.querySelector(".eq-page");
+    var finish = function () { if (!eq.open) screen.hidden = true; };
+    var onEnd = function (ev) {
+      if (ev.target !== page) return;
+      page.removeEventListener("transitionend", onEnd);
+      finish();
+    };
+    page.addEventListener("transitionend", onEnd);
+    setTimeout(finish, 480);
+    if (!fromPop && eq.historyPushed) {
+      eq.historyPushed = false;
+      try { history.back(); } catch (e) { /* ignore */ }
+    }
+  }
+
+  function initEqPage() {
+    var screen = $("#eqScreen");
+    if (!screen) return;
+    eqLoadPrefs();
+
+    var openBtn = $("#pressureOpenBtn");
+    if (openBtn) openBtn.addEventListener("click", openEqPage);
+    var backBtn = $("#eqBackBtn");
+    if (backBtn) backBtn.addEventListener("click", function () { closeEqPage(false); });
+    var connectBtn = $("#eqConnectBtn");
+    if (connectBtn) connectBtn.addEventListener("click", eqConnect);
+    var disconnectBtn = $("#eqDisconnectBtn");
+    if (disconnectBtn) disconnectBtn.addEventListener("click", function () { eqDisconnect(true); });
+
+    var unitBtn = $("#eqUnitBtn");
+    if (unitBtn) unitBtn.addEventListener("click", function () {
+      var i = EQ_UNITS.indexOf(eq.unit);
+      eq.unit = EQ_UNITS[(i + 1) % EQ_UNITS.length];
+      eqSavePrefs();
+      eqRenderValue(false);
+      toast("표시 단위 · " + eq.unit);
+    });
+
+    var peakBtn = $("#eqPeakBtn");
+    if (peakBtn) peakBtn.addEventListener("click", function () {
+      eq.peakMbar = 0;
+      eqRenderValue(false);
+      toast("최고 압력을 초기화했어요");
+    });
+
+    var logToggle = $("#eqLogToggle");
+    if (logToggle) logToggle.addEventListener("click", function () {
+      var body = $("#eqLogBody");
+      var on = !body.classList.contains("is-open");
+      body.classList.toggle("is-open", on);
+      logToggle.setAttribute("aria-expanded", on ? "true" : "false");
+    });
+
+    var parseSel = $("#eqParseSel");
+    if (parseSel) {
+      parseSel.value = eq.parseMode;
+      parseSel.addEventListener("change", function () {
+        eq.parseMode = parseSel.value;
+        eqSavePrefs();
+        eqReparseLast();
+      });
+    }
+
+    var scaleSel = $("#eqScaleSel");
+    if (scaleSel) {
+      scaleSel.value = String(eq.scale);
+      scaleSel.addEventListener("change", function () {
+        var v = Number(scaleSel.value);
+        eq.scale = v > 0 ? v : 1;
+        eqSavePrefs();
+        eqReparseLast();
+      });
+    }
+
+    var copyLogBtn = $("#eqCopyLogBtn");
+    if (copyLogBtn) copyLogBtn.addEventListener("click", eqCopyLog);
+    var clearLogBtn = $("#eqClearLogBtn");
+    if (clearLogBtn) clearLogBtn.addEventListener("click", function () {
+      eq.lines = [];
+      eq.lastCands = null;
+      eqRenderLog();
+      toast("로그를 지웠어요");
+    });
+    var demoBtn = $("#eqDemoBtn");
+    if (demoBtn) demoBtn.addEventListener("click", eqToggleDemo);
+    var copyLinkBtn = $("#eqCopyLinkBtn");
+    if (copyLinkBtn) copyLinkBtn.addEventListener("click", function () {
+      eqCopyText(window.location.href, "페이지 주소를 복사했어요");
+    });
+
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape" && eq.open) closeEqPage(false);
+    });
+    window.addEventListener("popstate", function () {
+      if (eq.open) closeEqPage(true);
+    });
+
+    eqCheckSupport();
+    eqRenderValue(false);
+  }
+
   // ---------- 시작 ----------
   async function boot() {
     loadPrefs();
@@ -2906,6 +3650,7 @@
     if (freeLogDateEl) freeLogDateEl.value = todayKey();
 
     bindUI();
+    initEqPage();
     renderHome();
     renderBreath();
     renderScheduleChrome();

@@ -8,7 +8,7 @@
 <meta name="theme-color" content="#0e1116">
 <meta name="color-scheme" content="dark">
 <meta name="format-detection" content="telephone=no">
-<link rel="manifest" href="./manifest.webmanifest?v=1.3.9">
+<link rel="manifest" href="./manifest.webmanifest?v=1.4.0">
 <link rel="icon" href="./icons/favicon-32.png" sizes="32x32" type="image/png">
 <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
 <link rel="apple-touch-startup-image" href="./icons/splash-1170x2532.png" media="(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3)">
@@ -21,7 +21,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="선데이">
-<link rel="stylesheet" href="./styles.css?v=1.3.9">
+<link rel="stylesheet" href="./styles.css?v=1.4.0">
 </head>
 <body>
 
@@ -124,12 +124,21 @@
     <circle cx="12" cy="10" r="2.2"/>
     <path d="M8.5 16.2c.7-1.6 2-2.4 3.5-2.4s2.8.8 3.5 2.4"/>
   </symbol>
+  <symbol id="i-eq-tree" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M12 2.9l3.7 5.4H8.3z"/>
+    <path d="M12 6.9l4.9 6.9H7.1z"/>
+    <path d="M12 11l6 8.6H6z"/>
+    <path d="M12 19.4v3.1" fill="none"/>
+  </symbol>
+  <symbol id="i-bt" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 2.8v18.4M12 2.8l5.6 4.6-11.2 9.2M12 21.2l5.6-4.6L6.4 7.4"/>
+  </symbol>
 </svg>
 
 <div class="app" id="app">
   <header class="topbar">
     <div class="brand">
-      <span class="brand-mark" aria-hidden="true"><img src="./icons/brand-logo.png?v=1.3.9" alt=""></span>
+      <span class="brand-mark" aria-hidden="true"><img src="./icons/brand-logo.png?v=1.4.0" alt=""></span>
       <span class="brand-text">
         <strong>선데이프리다이빙</strong>
         <span class="brand-sub">
@@ -233,6 +242,9 @@
     <section class="view" id="view-breath" data-view="breath" aria-label="Apnea Training">
       <div class="breath-top-bar">
         <h1 class="view-title">Apnea Training</h1>
+        <button class="eq-tree-btn" id="pressureOpenBtn" type="button" aria-label="압력 확인 열기" title="압력 확인 · EZEQ">
+          <svg><use href="#i-eq-tree"/></svg>
+        </button>
       </div>
 
       <div class="breath-controls-row">
@@ -510,6 +522,107 @@
   <p class="timer-note" id="timerNote">Screen stays awake</p>
 </div>
 
+<!-- ================= 압력 확인 (EZEQ · BLE) ================= -->
+<div class="eq-screen" id="eqScreen" hidden>
+  <div class="eq-page" role="dialog" aria-modal="true" aria-label="압력 확인">
+    <header class="eq-top">
+      <button class="eq-back" id="eqBackBtn" type="button" aria-label="뒤로 가기">
+        <svg><use href="#i-left"/></svg>
+      </button>
+      <div class="eq-top-title">
+        <span class="eq-eyebrow">EZEQ · BLE PRESSURE</span>
+        <strong>압력 확인</strong>
+      </div>
+      <span class="eq-conn-chip" id="eqConnChip">연결 안 됨</span>
+    </header>
+
+    <div class="eq-body" id="eqBody">
+      <section class="eq-gauge">
+        <p class="eq-gauge-label">불어낸 압력</p>
+        <div class="eq-value-row">
+          <span class="eq-value" id="eqValue">0.0</span>
+          <button class="eq-unit" id="eqUnitBtn" type="button" aria-label="표시 단위 바꾸기">mbar</button>
+        </div>
+        <div class="eq-bar"><i class="eq-bar-fill" id="eqBarFill"></i></div>
+        <div class="eq-gauge-foot">
+          <button class="eq-peak-btn" id="eqPeakBtn" type="button" title="누르면 최고 압력을 초기화합니다">최고 <strong id="eqPeak">0.0</strong></button>
+          <span class="eq-packet-meta" id="eqPacketMeta">대기 중</span>
+        </div>
+      </section>
+
+      <div class="eq-warn" id="eqUnsupported" hidden>
+        <strong>아이폰·아이패드는 Bluefy 앱으로 열어 주세요</strong>
+        <p>Safari와 홈 화면 앱에서는 웹 블루투스를 쓸 수 없어요. App Store에서 무료 <b>Bluefy</b> 앱을 설치하고, 이 페이지 주소를 Bluefy에서 열면 압력계와 연결됩니다.</p>
+        <div class="eq-warn-actions">
+          <a class="eq-bluefy-link" href="https://apps.apple.com/app/id1492822055" target="_blank" rel="noopener">Bluefy 설치</a>
+          <button class="eq-ghost eq-ghost-sm" id="eqCopyLinkBtn" type="button">주소 복사</button>
+        </div>
+      </div>
+
+      <div class="eq-actions">
+        <button class="eq-connect" id="eqConnectBtn" type="button">
+          <svg><use href="#i-bt"/></svg><span id="eqConnectLabel">기기 연결</span>
+        </button>
+        <button class="eq-ghost" id="eqDisconnectBtn" type="button" hidden>해제</button>
+      </div>
+      <p class="eq-hint" id="eqHint">압력계 전원을 켜고 <b>기기 연결</b>을 누른 뒤 목록에서 EZEQ를 선택하세요.<br>처음 받은 데이터가 규격과 다르면 아래 <b>수신 데이터 확인</b>에서 해석을 맞추면 됩니다.</p>
+
+      <div class="eq-device" id="eqDevice" hidden>
+        <span class="eq-device-dot" id="eqDeviceDot"></span>
+        <div class="eq-device-txt">
+          <strong id="eqDeviceName">-</strong>
+          <span id="eqDeviceSub">-</span>
+        </div>
+      </div>
+
+      <section class="eq-log">
+        <button class="eq-log-head" id="eqLogToggle" type="button" aria-expanded="false" aria-controls="eqLogBody">
+          <span>수신 데이터 확인 <em>UUID · Raw Hex · ASCII</em></span>
+          <span class="eq-log-meta" id="eqLogMeta">0</span>
+        </button>
+        <div class="collapsible" id="eqLogBody">
+          <div class="collapsible-inner">
+            <div class="eq-log-tools">
+              <label class="eq-mini-field"><span>해석</span>
+                <select id="eqParseSel">
+                  <option value="auto">자동 추정</option>
+                  <option value="ascii">ASCII 숫자</option>
+                  <option value="u8">uint8</option>
+                  <option value="i8">int8</option>
+                  <option value="u16le">uint16 (LE)</option>
+                  <option value="u16be">uint16 (BE)</option>
+                  <option value="i16le">int16 (LE)</option>
+                  <option value="i16be">int16 (BE)</option>
+                  <option value="u32le">uint32 (LE)</option>
+                  <option value="u32be">uint32 (BE)</option>
+                  <option value="f32le">float32 (LE)</option>
+                  <option value="f32be">float32 (BE)</option>
+                </select>
+              </label>
+              <label class="eq-mini-field"><span>배율</span>
+                <select id="eqScaleSel">
+                  <option value="1">×1</option>
+                  <option value="0.1">÷10</option>
+                  <option value="0.01">÷100</option>
+                  <option value="0.001">÷1000</option>
+                </select>
+              </label>
+            </div>
+            <div class="eq-log-buttons">
+              <button class="eq-mini-btn" id="eqCopyLogBtn" type="button">로그 복사</button>
+              <button class="eq-mini-btn" id="eqClearLogBtn" type="button">지우기</button>
+              <button class="eq-mini-btn" id="eqDemoBtn" type="button">모의 값 테스트</button>
+            </div>
+            <div class="eq-log-list" id="eqLogList"></div>
+            <p class="eq-empty" id="eqLogEmpty">아직 수신된 데이터가 없어요. 기기를 연결하면 여기에 표시됩니다.</p>
+            <p class="eq-log-note">큰 숫자는 수신값을 mbar로 가정해 환산한 값이에요. 실제 기기 단위가 다르면 <b>배율</b>로 맞춰 주세요.</p>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+
 <!-- ================= 공용 시트 ================= -->
 <div class="sheet-backdrop" id="sheetBackdrop" hidden></div>
 <div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle" hidden>
@@ -529,7 +642,7 @@
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-<script src="./config.js?v=1.3.9"></script>
-<script src="./app.js?v=1.3.9"></script>
+<script src="./config.js?v=1.4.0"></script>
+<script src="./app.js?v=1.4.0"></script>
 </body>
 </html>
