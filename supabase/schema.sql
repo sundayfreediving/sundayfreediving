@@ -443,6 +443,64 @@ $$;
 grant execute on function public.admin_delete_buddy_comment(text, uuid) to anon, authenticated;
 
 -- ---------------------------------------------------------------------------
+-- 5. 사용자별 개인 데이터 (v1.4.2 · 로그인하면 기기 간 자동 동기화)
+--    · 로그인한 계정(auth.uid())만 자기 행을 읽고/쓸 수 있습니다.
+--    · key : sfd.prefs / sfd.history / sfd.logbook / sfd.eq / sfd.licensePhoto
+--    · client_updated_at : 기기에서 값을 바꾼 시각(ms). 충돌은 최신 값 우선
+-- ---------------------------------------------------------------------------
+create table if not exists public.user_state (
+  user_id           uuid not null references auth.users (id) on delete cascade,
+  key               text not null
+                      check (key in ('sfd.prefs', 'sfd.history', 'sfd.logbook', 'sfd.eq', 'sfd.licensePhoto')),
+  value             jsonb,
+  client_updated_at bigint not null default 0,
+  updated_at        timestamptz not null default now(),
+  primary key (user_id, key)
+);
+
+alter table public.user_state add column if not exists client_updated_at bigint not null default 0;
+alter table public.user_state add column if not exists updated_at timestamptz not null default now();
+
+create index if not exists user_state_user_idx on public.user_state (user_id);
+
+alter table public.user_state enable row level security;
+
+revoke all on public.user_state from anon;
+grant select, insert, update, delete on public.user_state to authenticated;
+grant all on public.user_state to service_role;
+
+drop policy if exists "user_state_select_own" on public.user_state;
+drop policy if exists "user_state_insert_own" on public.user_state;
+drop policy if exists "user_state_update_own" on public.user_state;
+drop policy if exists "user_state_delete_own" on public.user_state;
+
+create policy "user_state_select_own"
+  on public.user_state for select
+  to authenticated
+  using (auth.uid() = user_id);
+
+create policy "user_state_insert_own"
+  on public.user_state for insert
+  to authenticated
+  with check (auth.uid() = user_id);
+
+create policy "user_state_update_own"
+  on public.user_state for update
+  to authenticated
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+create policy "user_state_delete_own"
+  on public.user_state for delete
+  to authenticated
+  using (auth.uid() = user_id);
+
+drop trigger if exists user_state_touch_updated_at on public.user_state;
+create trigger user_state_touch_updated_at
+  before update on public.user_state
+  for each row execute function public.touch_updated_at();
+
+-- ---------------------------------------------------------------------------
 -- 4. 기본 권한
 -- ---------------------------------------------------------------------------
 grant usage on schema public to anon, authenticated;

@@ -8,7 +8,7 @@
 <meta name="theme-color" content="#0e1116">
 <meta name="color-scheme" content="dark">
 <meta name="format-detection" content="telephone=no">
-<link rel="manifest" href="./manifest.webmanifest?v=1.4.1">
+<link rel="manifest" href="./manifest.webmanifest?v=1.4.2">
 <link rel="icon" href="./icons/favicon-32.png" sizes="32x32" type="image/png">
 <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
 <link rel="apple-touch-startup-image" href="./icons/splash-1170x2532.png" media="(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3)">
@@ -21,7 +21,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="선데이">
-<link rel="stylesheet" href="./styles.css?v=1.4.1">
+<link rel="stylesheet" href="./styles.css?v=1.4.2">
 </head>
 <body>
 
@@ -119,6 +119,10 @@
   <symbol id="i-check" viewBox="0 0 24 24">
     <path d="M5 12.6l4.5 4.4L19 7.4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
   </symbol>
+  <symbol id="i-account" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="12" cy="8.4" r="3.6"/>
+    <path d="M4.8 20.2c.6-3.5 3.4-5.6 7.2-5.6s6.6 2.1 7.2 5.6"/>
+  </symbol>
   <symbol id="i-admin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
     <path d="M12 2.5L4.5 5.8v5.7c0 5 3.2 9.4 7.5 10.5 4.3-1.1 7.5-5.5 7.5-10.5V5.8L12 2.5z"/>
     <circle cx="12" cy="10" r="2.2"/>
@@ -138,7 +142,7 @@
 <div class="app" id="app">
   <header class="topbar">
     <div class="brand">
-      <span class="brand-mark" aria-hidden="true"><img src="./icons/brand-logo.png?v=1.4.1" alt=""></span>
+      <span class="brand-mark" aria-hidden="true"><img src="./icons/brand-logo.png?v=1.4.2" alt=""></span>
       <span class="brand-text">
         <strong>선데이프리다이빙</strong>
         <span class="brand-sub">
@@ -149,6 +153,10 @@
     </div>
     <div class="topbar-actions" style="display:flex;align-items:center;gap:8px;">
       <button type="button" class="install-pill-btn" id="installAppBtn" hidden>앱 설치</button>
+      <button type="button" class="icon-btn account-top-btn" id="accountOpenBtn" aria-label="로그인 · 기기 동기화" title="로그인 · 기기 동기화">
+        <svg><use href="#i-account"/></svg>
+        <span class="account-dot" id="accountDot" hidden></span>
+      </button>
       <button class="icon-btn admin-top-btn" id="adminOpenBtn" aria-label="관리자 설정" title="관리자 설정" hidden>
         <svg><use href="#i-admin"/></svg>
       </button>
@@ -666,7 +674,7 @@
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-<script src="./config.js?v=1.4.1"></script>
-<script src="./app.js?v=1.4.1"></script>
+<script src="./config.js?v=1.4.2"></script>
+<script src="./app.js?v=1.4.2"></script>
 </body>
 </html>
