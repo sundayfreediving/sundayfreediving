@@ -1786,24 +1786,11 @@
     var cells = Math.ceil((offset + days) / 7) * 7;
     var counts = {};
     var levelsByDate = {};
-    var namesByDate = {};
     state.schedules.forEach(function (s) {
       if (!s.class_date) return;
       counts[s.class_date] = (counts[s.class_date] || 0) + 1;
       if (!levelsByDate[s.class_date]) levelsByDate[s.class_date] = [];
       levelsByDate[s.class_date].push(s.level || "기타");
-    });
-    // 신청자 이름을 달력에 바로 보여 줍니다 (같은 사람은 하루에 한 번만)
-    var seen = {};
-    state.schedules.forEach(function (s) {
-      if (!s.class_date) return;
-      registrationsOf(s.id).forEach(function (r) {
-        var mark = s.class_date + "|" + r.user_id;
-        if (seen[mark]) return;
-        seen[mark] = true;
-        if (!namesByDate[s.class_date]) namesByDate[s.class_date] = [];
-        namesByDate[s.class_date].push(r.name);
-      });
     });
 
     var html = "";
@@ -1817,31 +1804,21 @@
       var key = dateKey(dt);
       var dow = dt.getDay();
       var isToday = key === todayKey();
-      var names = namesByDate[key] || [];
       var cls = "cal-cell";
       if (dow === 0 || dow === 6) cls += " is-sun-sat";
       if (isToday) cls += " is-today";
       if (key === state.selected) cls += " is-selected";
       if (counts[key]) cls += " has-events";
-      if (names.length) cls += " has-names";
-      var label = (m + 1) + "월 " + dayNum + "일 " + WEEK[dow] + "요일" + (isToday ? " 오늘" : "") + (counts[key] ? ", 수업 " + counts[key] + "개" : "")
-        + (names.length ? ", 신청 " + names.join(", ") : "");
+      var label = (m + 1) + "월 " + dayNum + "일 " + WEEK[dow] + "요일" + (isToday ? " 오늘" : "") + (counts[key] ? ", 수업 " + counts[key] + "개" : "");
       var todayTag = isToday ? '<span class="cal-today-tag">오늘</span>' : "";
       var dots = "";
-      if (levelsByDate[key] && !names.length) {
+      if (levelsByDate[key]) {
         dots = '<span class="cal-dots">' + levelsByDate[key].slice(0, 3).map(function (lv) {
           return '<i style="background:' + (LEVEL_COLORS[lv] || LEVEL_COLORS["기타"]) + '"></i>';
         }).join("") + '</span>';
       }
-      var namesHtml = "";
-      if (names.length) {
-        namesHtml = '<span class="cal-names">'
-          + names.slice(0, 2).map(function (n) { return "<b>" + esc(n) + "</b>"; }).join("")
-          + (names.length > 2 ? '<b class="more">+' + (names.length - 2) + "</b>" : "")
-          + '</span>';
-      }
       html += '<button type="button" class="' + cls + '" data-key="' + key + '" '
-        + 'aria-pressed="' + (key === state.selected) + '" aria-label="' + esc(label) + '">' + dayNum + todayTag + dots + namesHtml + '</button>';
+        + 'aria-pressed="' + (key === state.selected) + '" aria-label="' + esc(label) + '">' + dayNum + todayTag + dots + '</button>';
     }
     calGridEl.innerHTML = html;
   }
@@ -1859,10 +1836,10 @@
       var color = LEVEL_COLORS[s.level] || LEVEL_COLORS["기타"];
       var time = s.start_time || "";
       if (s.end_time) time += " – " + s.end_time;
-      var regs = registrationsOf(s.id);
+      var head = headcountOf(s);
       var mine = myRegistration(s.id);
       var cap = (s.capacity === null || s.capacity === undefined || isNaN(s.capacity)) ? null : s.capacity;
-      var full = cap !== null && regs.length >= cap && !mine;
+      var full = cap !== null && head.total >= cap && !mine;
 
       var actions = "";
       if (state.isAdmin) {
@@ -1872,17 +1849,17 @@
           + '</div>';
       }
 
-      var chips = regs.map(function (r) {
-        var isMe = r.user_id === me;
-        var label = esc(r.name) + (isMe ? " (나)" : "");
-        if (state.isAdmin) {
-          return '<span class="reg-chip' + (isMe ? " is-mine" : "") + '">' + label
-            + '<button type="button" class="reg-x" data-act="cancel-user" data-id="' + esc(s.id) + '"'
-            + ' data-user="' + esc(r.user_id) + '" data-name="' + esc(r.name) + '"'
-            + ' aria-label="' + esc(r.name) + ' 신청 취소">×</button></span>';
+      // 신청자 이름은 '신청 x명' 옆에 같은 회색 글씨로만 적습니다 (네모 박스 없음).
+      // 관리자는 이름을 누르면 그 신청을 취소할 수 있습니다.
+      var namesHtml = head.list.map(function (p) {
+        var label = esc(p.name) + (p.isMine ? " (나)" : "");
+        if (state.isAdmin && p.userId) {
+          return '<b class="reg-name is-tap" role="button" tabindex="0" data-act="cancel-user" data-id="' + esc(s.id) + '"'
+            + ' data-user="' + esc(p.userId) + '" data-name="' + esc(p.name) + '"'
+            + ' title="' + esc(p.name) + ' 신청 취소" aria-label="' + esc(p.name) + ' 신청 취소">' + label + '</b>';
         }
-        return '<span class="reg-chip' + (isMe ? " is-mine" : "") + '">' + label + '</span>';
-      }).join("");
+        return '<b class="reg-name' + (p.isMine ? " is-mine" : "") + '">' + label + '</b>';
+      }).join('<span class="reg-sep">,</span> ');
 
       var signupBtn;
       if (mine) {
@@ -1893,7 +1870,7 @@
         signupBtn = '<button type="button" class="signup-btn" data-act="signup" data-id="' + esc(s.id) + '">신청</button>';
       }
 
-      var seat = "신청 " + regs.length + "명" + (cap !== null ? " / 정원 " + cap + "명" : "");
+      var seat = "신청 " + head.total + "명" + (cap !== null ? " / 정원 " + cap + "명" : "");
 
       var notes = visibleNotes(s.notes);
 
@@ -1910,12 +1887,115 @@
         + (notes ? '<p class="event-notes">' + esc(notes) + '</p>' : '')
         + '<div class="event-signup">'
         + '<div class="reg-line"><span class="reg-count">' + esc(seat) + '</span>'
-        + (chips ? '<div class="reg-chips">' + chips + '</div>' : '')
+        + (namesHtml ? '<span class="reg-names">' + namesHtml + '</span>' : '')
         + '</div>'
         + signupBtn
         + '</div>'
         + '</article>';
     }).join("");
+  }
+
+  // ---------- 일정에 적어 둔 참가자 이름·인원 ----------
+  //  예) "10:00 잠실 자율연습 (암갈란, 남오나, 이창호님)" → 3명
+  //     "08:00 딥스 자율연습 (1)"            → 1명
+  //     "AIDA2 홍길동님"                    → 1명
+  //  장소·과정 이름(잠실, K26, 딥스테이션, 아이다2, 자율연습, 정기트레이닝 등)은
+  //  사람 이름으로 보지 않습니다.
+  var TITLE_STOPWORDS = [
+    "딥스테이션", "개인트레이닝", "정기트레이닝", "개인 트레이닝", "정기 트레이닝",
+    "자율연습", "프리다이빙", "추가인원", "트레이닝", "아이다", "AIDA",
+    "잠실", "K26", "k26", "딥스", "보홀", "녹도", "뒷풀이", "모임",
+    "버디", "강사", "수업", "연습", "투어", "코스", "과정",
+    "여성", "남성", "부이", "대여", "오전", "오후"
+  ];
+
+  function nameKey(name) {
+    return String(name || "").replace(/\s+/g, "").replace(/(님|씨|강사님)$/, "");
+  }
+
+  function looksLikeName(t) {
+    if (!t) return false;
+    if (/^[가-힣]{2,6}$/.test(t)) return true;
+    if (/^[A-Za-z][A-Za-z.'-]{1,19}$/.test(t)) return true;
+    return false;
+  }
+
+  function cleanNameToken(raw) {
+    var t = " " + String(raw || "") + " ";
+    t = t.replace(/[()\[\]{}<>「」『』]/g, " ");
+    t = t.replace(/^\s*\d{1,2}\s*[:：]\s*\d{2}\s*/, " ");
+    TITLE_STOPWORDS.forEach(function (w) { t = t.split(w).join(" "); });
+    t = t.replace(/(강사님|님|씨)\s*$/, " ");
+    t = t.replace(/[·•~!?:]+/g, " ");
+    t = t.replace(/\s+/g, " ").trim();
+    return t;
+  }
+
+  // 한 토막에서 "2명"·"여성 1인"·"(3)" 같은 인원 표기를 읽습니다.
+  function countInToken(raw) {
+    var t = String(raw || "").replace(/\s+/g, "");
+    var m = t.match(/(\d{1,2})(명|인|분)/);
+    if (m) return parseInt(m[1], 10);
+    if (/^\d{1,2}$/.test(t)) return parseInt(t, 10);
+    return 0;
+  }
+
+  function peopleInTitle(title) {
+    var src = String(title || "");
+    var names = [];
+    var count = 0;
+    var inner = [];
+    var m;
+    var reParen = /\(([^)]*)\)/g;
+    while ((m = reParen.exec(src))) inner.push(m[1]);
+    var reBracket = /\[([^\]]*)\]/g;
+    while ((m = reBracket.exec(src))) inner.push(m[1]);
+
+    var segments;
+    if (inner.length) {
+      segments = inner.join(",").split(/[,、·\/;]/);
+    } else {
+      var rest = src.replace(/^\s*\d{1,2}\s*[:：]\s*\d{2}\s*/, " ").trim();
+      // 괄호가 없을 때는 '님'이 붙은 이름이 있을 때만 이름 목록으로 봅니다.
+      if (!/님\s*$/.test(rest)) return { names: [], count: 0 };
+      segments = rest.split(/[,、·\/;]/);
+    }
+
+    segments.forEach(function (seg) {
+      var n = countInToken(seg);
+      if (n > 0) {
+        count += n;
+        return;
+      }
+      var t = cleanNameToken(seg);
+      if (!t) return;
+      if (looksLikeName(t)) { names.push(t); return; }
+      var parts = t.split(" ");
+      for (var i = parts.length - 1; i >= 0; i--) {
+        if (looksLikeName(parts[i])) { names.push(parts[i]); return; }
+      }
+    });
+    return { names: names, count: count };
+  }
+
+  // 일정에 적힌 이름 + 앱 신청자를 합칩니다. 같은 사람은 한 번만 셉니다.
+  function headcountOf(s) {
+    var info = peopleInTitle(s && s.title);
+    var regs = registrationsOf(s.id);
+    var me = myUserId();
+    var seen = {};
+    var list = [];
+    function push(name, userId) {
+      var k = nameKey(name);
+      if (!k || seen[k]) return;
+      seen[k] = true;
+      list.push({ name: name, userId: userId || null, isMine: !!userId && userId === me });
+    }
+    info.names.forEach(function (n) { push(n, null); });
+    regs.forEach(function (r) { push(r.name, r.user_id); });
+    var total = list.length;
+    if (info.count > total) total = info.count;
+    return { list: list, total: total, regs: regs, titleNames: info.names, extraCount: info.count };
   }
 
   // ---------- 이 달의 정기트레이닝 ----------
@@ -1950,7 +2030,7 @@
     mtListEl.hidden = list.length === 0;
 
     mtListEl.innerHTML = list.map(function (s) {
-      var count = registrationsOf(s.id).length;
+      var count = headcountOf(s).total;
       return '<li class="mt-row">'
         + '<button type="button" class="mt-main" data-mt-id="' + esc(s.id) + '" data-key="' + esc(s.class_date) + '">'
         + '<span class="mt-k">날짜</span>'
@@ -2010,7 +2090,7 @@
       await refreshRegistrations();
       refreshScheduleViews();
       closeSheet();
-      toast(name + "님, 신청 완료! 달력에도 표시했어요");
+      toast(name + "님, 신청 완료!");
     } catch (err) {
       console.error(err);
       toast("신청하지 못했어요: " + errText(err));
@@ -2053,7 +2133,7 @@
 
   function openSignupNameSheet(schedule) {
     openSheet("신청자 이름",
-      '<p class="sheet-text"><b>' + esc(schedule.title) + '</b><br>달력에 표시할 이름을 적어 주세요. 프로필 닉네임으로 저장됩니다.</p>'
+      '<p class="sheet-text"><b>' + esc(schedule.title) + '</b><br>신청자 명단에 표시할 이름을 적어 주세요. 프로필 닉네임으로 저장됩니다.</p>'
       + '<div class="form-row"><label for="signupName">이름</label>'
       + '<input id="signupName" type="text" maxlength="20" placeholder="예: 김병선" autocomplete="name"></div>'
       + '<div class="form-actions"><button type="button" class="btn-primary" id="signupNameBtn" style="flex:1">이 이름으로 신청</button></div>'
@@ -2875,7 +2955,7 @@
           + '<div class="log-item-left">'
           +   '<span class="disc-badge">로그</span>'
           +   '<div class="log-item-main">'
-          +     '<div class="log-item-top"><span class="log-val" style="font-size:14px;font-weight:650">' + logTitle + '</span></div>'
+          +     '<div class="log-item-top"><span class="log-val log-entry-text" style="font-size:14px;font-weight:650">' + logTitle + '</span></div>'
           +     '<span class="log-item-sub">' + logSub + '</span>'
           +   '</div>'
           + '</div>'
@@ -2955,6 +3035,26 @@
     }
 
     var freeLogSaveBtn = $("#freeLogSaveBtn");
+
+    // 카톡 쓰듯이: 내용이 길어지면 입력창도 같이 늘어납니다.
+    function autoGrowArea(el, min, max) {
+      if (!el) return;
+      var floor = min || 36;
+      var ceiling = max || 420;
+      el.style.height = "auto";
+      el.style.height = Math.max(floor, Math.min(el.scrollHeight + 2, ceiling)) + "px";
+    }
+
+    var freeLogTextEl = $("#freeLogText");
+    if (freeLogTextEl) {
+      freeLogTextEl.addEventListener("input", function () { autoGrowArea(freeLogTextEl, 148, 420); });
+    }
+
+    var logMemoEl = $("#logMemoInput");
+    if (logMemoEl) {
+      logMemoEl.addEventListener("input", function () { autoGrowArea(logMemoEl, 36, 180); });
+    }
+
     if (freeLogSaveBtn) {
       freeLogSaveBtn.addEventListener("click", function () {
         var fDate = $("#freeLogDate");
@@ -2978,6 +3078,7 @@
         saveLogbook();
         if (fPlace) fPlace.value = "";
         if (fText) fText.value = "";
+        autoGrowArea(fText, 148, 420);
         renderHome();
         toast("로그북에 저장했어요!");
       });
