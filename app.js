@@ -3401,6 +3401,9 @@
       return;
     }
     eqLogLine("SYS", "서비스", "총 " + services.length + "개 발견");
+    if (!services.length) {
+      eqLogLine("SYS", "안내", "브라우저가 허용한 서비스가 없습니다 · 압력계 이름을 알려주시면 UUID를 추가해 드릴게요");
+    }
     for (var i = 0; i < services.length; i++) {
       var svc = services[i];
       eqLogLine("SVC", "서비스", eqShortUuid(svc.uuid));
@@ -3419,7 +3422,7 @@
     if (!eq.hasNotify && eq.lastRead) eqApplyPacket(eq.lastRead);
     var sub = eq.chars.filter(function (c) { return c.subscribed; }).length;
     eqLogLine("SYS", "정리", "구독 " + sub + "개 · 읽기 " + eq.chars.filter(function (c) { return c.flags.indexOf("read") >= 0; }).length + "개");
-    if (!sub) eqLogLine("SYS", "안내", "알림(notify) 특성이 없어 읽기 값만 표시됩니다");
+    if (services.length && !sub) eqLogLine("SYS", "안내", "알림(notify) 특성이 없어 읽기 값만 표시됩니다");
     var row = $("#eqDeviceSub");
     var dev = eq.device;
     if (row && dev) row.textContent = "연결됨 · 구독 특성 " + sub + "개";
