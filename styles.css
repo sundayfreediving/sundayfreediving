@@ -3695,6 +3695,62 @@ svg {
 
 .eq-write-note b { color: var(--ink-2); }
 
+/* ---------- 1바이트 전체 신호 스캔 (v1.4.3) ---------- */
+.eq-scan {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--line, rgba(0, 0, 0, 0.12));
+}
+
+.eq-scan-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-bottom: 6px;
+  font-size: 11px;
+  font-weight: 750;
+  color: var(--ink-2);
+}
+
+.eq-scan-head em {
+  font-style: normal;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  color: var(--ink-3);
+}
+
+.eq-scan-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+
+.eq-scan-btn {
+  height: 34px;
+  padding: 0 4px;
+  font-size: 11px;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.eq-scan-btn.is-on {
+  color: #fff;
+  background: linear-gradient(140deg, #e0903f 0%, #c06b1f 100%);
+  border-color: transparent;
+}
+
+.eq-scan-btn:disabled { opacity: 0.42; }
+
+.eq-scan-status {
+  margin: 7px 0 0;
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--ink-3);
+  word-break: break-all;
+}
+
+.eq-scan-status.is-hit { color: #2f9e5f; font-weight: 750; }
+
+.eq-scan-retry { margin-top: 7px; width: 100%; height: 34px; font-size: 11.5px; font-weight: 750; }
+.eq-scan-retry[hidden] { display: none !important; }
+
 .eq-log-line[data-tag="TX"] .eq-tag { color: #c7802a; }
 .eq-log-line[data-tag="AUTO"] .eq-tag { color: #3a7bd5; }
 
